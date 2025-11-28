@@ -1,0 +1,324 @@
+╔══════════════════════════════════════════════════════════════════════════╗
+║                   USERFORM LAYOUT SPECIFICATION                          ║
+║              Time Series Forecasting Tool - ForecastGUI                  ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+FORM PROPERTIES:
+═══════════════════════════════════════════════════════════════════════════
+Name:            ForecastGUI
+Caption:         Time Series Forecasting Tool
+Width:           540
+Height:          420
+StartUpPosition: 1 - CenterOwner
+
+
+CONTROL LAYOUT:
+═══════════════════════════════════════════════════════════════════════════
+
+┌────────────────────────────────────────────────────────────────────────┐
+│                                                                        │
+│  ┌─────────────────────────────────────────────────────────────┐      │
+│  │         TIME SERIES FORECASTING TOOL                        │      │
+│  │       Professional Statistical Forecasting in Excel         │      │
+│  └─────────────────────────────────────────────────────────────┘      │
+│                                                                        │
+│  ┌──────────────────────────────────────────────────────────────┐     │
+│  │ INPUT SECTION                                                │     │
+│  ├──────────────────────────────────────────────────────────────┤     │
+│  │                                                              │     │
+│  │  CSV File Path:                                              │     │
+│  │  ┌────────────────────────────────────────┐  ┌──────────┐   │     │
+│  │  │ [txtFilePath]                          │  │ Browse   │   │     │
+│  │  └────────────────────────────────────────┘  └──────────┘   │     │
+│  │                                                              │     │
+│  │  Column Name:          Frequency:         Horizon:          │     │
+│  │  ┌────────────────┐    ┌──────┐           ┌──────┐          │     │
+│  │  │[txtColumnName] │    │  12  │           │  12  │          │     │
+│  │  └────────────────┘    └──────┘           └──────┘          │     │
+│  │                                                              │     │
+│  │  Seasonal Type:                                              │     │
+│  │  ┌────────────────────┐                                      │     │
+│  │  │ Additive        ▼ │                                      │     │
+│  │  └────────────────────┘                                      │     │
+│  │                                                              │     │
+│  └──────────────────────────────────────────────────────────────┘     │
+│                                                                        │
+│  ┌──────────────────────────────────────────────────────────────┐     │
+│  │ ACTIONS                                                      │     │
+│  ├──────────────────────────────────────────────────────────────┤     │
+│  │                                                              │     │
+│  │  ┌──────────┐  ┌─────────┐  ┌────────────┐                  │     │
+│  │  │Load Data │  │ Analyze │  │View Charts │                  │     │
+│  │  └──────────┘  └─────────┘  └────────────┘                  │     │
+│  │                                                              │     │
+│  │  ┌──────────────┐            ┌───────┐                      │     │
+│  │  │Export Results│            │ Close │                      │     │
+│  │  └──────────────┘            └───────┘                      │     │
+│  │                                                              │     │
+│  └──────────────────────────────────────────────────────────────┘     │
+│                                                                        │
+│  ┌──────────────────────────────────────────────────────────────┐     │
+│  │ Status: Ready                                                │     │
+│  └──────────────────────────────────────────────────────────────┘     │
+│                                                                        │
+└────────────────────────────────────────────────────────────────────────┘
+
+
+DETAILED CONTROL SPECIFICATIONS:
+═══════════════════════════════════════════════════════════════════════════
+
+TITLE SECTION
+─────────────
+1. Label (Title)
+   Name:        lblTitle
+   Caption:     "Time Series Forecasting Tool"
+   Font.Size:   14
+   Font.Bold:   True
+   ForeColor:   RGB(0, 102, 204)
+   Left:        120
+   Top:         10
+   Width:       350
+   Height:      20
+
+2. Label (Subtitle)
+   Caption:     "Professional Statistical Forecasting in Excel"
+   Font.Size:   9
+   Font.Italic: True
+   ForeColor:   RGB(100, 100, 100)
+   Left:        120
+   Top:         35
+   Width:       300
+   Height:      15
+
+
+FILE INPUT SECTION
+──────────────────
+3. Label
+   Caption:     "CSV File Path:"
+   Left:        20
+   Top:         70
+   Width:       100
+   Height:      15
+
+4. TextBox
+   Name:        txtFilePath
+   Text:        ""
+   Left:        20
+   Top:         90
+   Width:       380
+   Height:      20
+   Locked:      False
+
+5. CommandButton
+   Name:        btnBrowseFile
+   Caption:     "Browse..."
+   Left:        410
+   Top:         87
+   Width:       80
+   Height:      25
+
+
+PARAMETERS SECTION
+──────────────────
+6. Label
+   Caption:     "Column Name:"
+   Left:        20
+   Top:         130
+   Width:       100
+   Height:      15
+
+7. TextBox
+   Name:        txtColumnName
+   Text:        ""
+   Left:        20
+   Top:         150
+   Width:       120
+   Height:      20
+
+8. Label
+   Caption:     "Frequency:"
+   Left:        160
+   Top:         130
+   Width:       80
+   Height:      15
+
+9. TextBox
+   Name:        txtFrequency
+   Text:        "12"
+   Left:        160
+   Top:         150
+   Width:       60
+   Height:      20
+
+10. Label
+    Caption:     "Forecast Horizon:"
+    Left:        240
+    Top:         130
+    Width:       100
+    Height:      15
+
+11. TextBox
+    Name:        txtHorizon
+    Text:        "12"
+    Left:        240
+    Top:         150
+    Width:       60
+    Height:      20
+
+12. Label
+    Caption:     "Seasonal Type:"
+    Left:        20
+    Top:         190
+    Width:       100
+    Height:      15
+
+13. ComboBox
+    Name:        cboSeasonalType
+    Text:        ""
+    Left:        20
+    Top:         210
+    Width:       150
+    Height:      20
+    Style:       2 - fmStyleDropDownList
+
+
+ACTION BUTTONS
+──────────────
+14. CommandButton
+    Name:        btnLoadData
+    Caption:     "Load Data"
+    Left:        20
+    Top:         260
+    Width:       100
+    Height:      30
+    Font.Size:   10
+
+15. CommandButton
+    Name:        btnAnalyze
+    Caption:     "Analyze"
+    Left:        130
+    Top:         260
+    Width:       100
+    Height:      30
+    Font.Size:   10
+    Font.Bold:   True
+    BackColor:   RGB(0, 120, 215)  [Optional - Blue]
+
+16. CommandButton
+    Name:        btnViewCharts
+    Caption:     "View Charts"
+    Left:        240
+    Top:         260
+    Width:       100
+    Height:      30
+    Font.Size:   10
+
+17. CommandButton
+    Name:        btnExport
+    Caption:     "Export Results"
+    Left:        20
+    Top:         300
+    Width:       120
+    Height:      30
+    Font.Size:   10
+
+18. CommandButton
+    Name:        btnClose
+    Caption:     "Close"
+    Left:        400
+    Top:         300
+    Width:       90
+    Height:      30
+    Font.Size:   10
+
+
+STATUS SECTION
+──────────────
+19. Label
+    Name:        lblStatus
+    Caption:     "Status: Ready"
+    Left:        20
+    Top:         360
+    Width:       470
+    Height:      20
+    ForeColor:   RGB(0, 0, 255)  [Blue]
+    Font.Size:   9
+    BorderStyle: 1 - fmBorderStyleSingle
+    BackColor:   RGB(240, 240, 240)  [Light Gray]
+
+
+═══════════════════════════════════════════════════════════════════════════
+TOTAL CONTROLS: 19
+═══════════════════════════════════════════════════════════════════════════
+
+
+STEP-BY-STEP PLACEMENT:
+═══════════════════════════════════════════════════════════════════════════
+
+1. Open ForecastGUI in designer (double-click in VBA Project Explorer)
+2. Open Toolbox (Ctrl+T) and Properties window (F4)
+3. For each control above:
+   a. Click control type in Toolbox
+   b. Click on form to place it
+   c. In Properties window, set Name property
+   d. Set all other properties as specified
+   e. Position using Left/Top values
+
+
+ALTERNATIVE: QUICK LAYOUT METHOD
+═══════════════════════════════════════════════════════════════════════════
+
+If exact positioning is not critical, you can:
+
+1. Add all controls in any position
+2. Set their Name properties correctly
+3. Use Format menu to arrange:
+   - Select multiple controls (Ctrl+Click)
+   - Format → Align → Lefts/Rights/Tops
+   - Format → Vertical Spacing → Make Equal
+   - Format → Horizontal Spacing → Make Equal
+
+The code will work as long as the Name properties match!
+
+
+CRITICAL REQUIREMENTS:
+═══════════════════════════════════════════════════════════════════════════
+
+✓ MUST HAVE - These control names are required by the code:
+  - txtFilePath
+  - btnBrowseFile
+  - txtColumnName
+  - txtFrequency
+  - txtHorizon
+  - cboSeasonalType
+  - btnLoadData
+  - btnAnalyze
+  - btnViewCharts
+  - btnExport
+  - btnClose
+  - lblStatus
+
+✓ OPTIONAL - These improve appearance but are not required:
+  - lblTitle
+  - Other decorative labels
+  - Exact positioning
+  - Colors and fonts
+
+
+VERIFICATION:
+═══════════════════════════════════════════════════════════════════════════
+
+After creating the UserForm, verify:
+
+1. All control names are correct (case-sensitive!)
+2. Form opens without errors
+3. ComboBox is set to Style = fmStyleDropDownList
+4. All buttons are clickable
+5. TextBoxes accept input
+
+Test by pressing F5 in VBA Editor while viewing the form code.
+
+
+═══════════════════════════════════════════════════════════════════════════
+END OF SPECIFICATION
+═══════════════════════════════════════════════════════════════════════════

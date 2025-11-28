@@ -1,0 +1,23 @@
+# Excel temporary files
+~$*.xls*
+~$*.xlsm
+~$*.xlsx
+*.tmp
+
+# VBA temporary files
+*.swp
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor files
+*.bak
+*.log
+
+# Personal test files
+test_data/
+local/
+temp/

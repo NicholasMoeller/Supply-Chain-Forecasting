@@ -1,0 +1,408 @@
+Option Explicit
+
+Private tsData As TimeSeriesData
+Private sesResult As ForecastResult
+Private hwResult As ForecastResult
+Private decompResult As DecompositionResult
+
+' Form initialization
+Private Sub UserForm_Initialize()
+    txtFrequency.Text = "12"
+    txtHorizon.Text = "12"
+    cboSeasonalType.Clear
+    cboSeasonalType.AddItem "Additive"
+    cboSeasonalType.AddItem "Multiplicative"
+    cboSeasonalType.ListIndex = 0
+    lblStatus.Caption = "Ready"
+    lblStatus.ForeColor = RGB(0, 0, 255)
+    EnableControls True
+End Sub
+
+' Browse button
+Private Sub btnBrowseFile_Click()
+    Dim fd As FileDialog
+    Set fd = Application.FileDialog(msoFileDialogFilePicker)
+    With fd
+        .Title = "Select CSV File"
+        .Filters.Clear
+        .Filters.Add "CSV Files", "*.csv"
+        .Filters.Add "All Files", "*.*"
+        .AllowMultiSelect = False
+        If .Show = -1 Then txtFilePath.Text = .SelectedItems(1)
+    End With
+End Sub
+
+' Load Data button
+Private Sub btnLoadData_Click()
+    On Error GoTo ErrorHandler
+
+    If Trim(txtFilePath.Text) = "" Then
+        MsgBox "Please select a CSV file.", vbExclamation: Exit Sub
+    End If
+    If Trim(txtColumnName.Text) = "" Then
+        MsgBox "Please enter a column name.", vbExclamation: Exit Sub
+    End If
+    If Not IsNumeric(txtFrequency.Text) Or Val(txtFrequency.Text) < 1 Then
+        MsgBox "Please enter a valid frequency.", vbExclamation: Exit Sub
+    End If
+    If Not IsNumeric(txtHorizon.Text) Or Val(txtHorizon.Text) < 1 Then
+        MsgBox "Please enter a valid forecast horizon.", vbExclamation: Exit Sub
+    End If
+
+    lblStatus.Caption = "Loading data..."
+    lblStatus.ForeColor = RGB(0, 0, 255)
+    DoEvents
+
+    Dim dataValues() As Double
+    dataValues = ReadCSVData(txtFilePath.Text, txtColumnName.Text)
+
+    If UBound(dataValues) < LBound(dataValues) Then
+        MsgBox "No data found.", vbExclamation
+        lblStatus.Caption = "Error loading data"
+        lblStatus.ForeColor = RGB(255, 0, 0)
+        Exit Sub
+    End If
+
+    tsData.Values = dataValues
+    tsData.Frequency = CInt(txtFrequency.Text)
+
+    lblStatus.Caption = "Data loaded! (" & (UBound(dataValues) - LBound(dataValues) + 1) & " points)"
+    lblStatus.ForeColor = RGB(0, 128, 0)
+    Exit Sub
+
+ErrorHandler:
+    MsgBox "Error: " & Err.Description, vbCritical
+    lblStatus.Caption = "Error loading data"
+    lblStatus.ForeColor = RGB(255, 0, 0)
+End Sub
+
+' Analyze button
+Private Sub btnAnalyze_Click()
+    On Error GoTo ErrorHandler
+
+    If IsEmpty(tsData.Values) Then
+        MsgBox "Please load data first.", vbExclamation: Exit Sub
+    End If
+
+    lblStatus.Caption = "Running analysis..."
+    lblStatus.ForeColor = RGB(0, 0, 255)
+    EnableControls False
+    DoEvents
+
+    Dim horizon As Integer
+    horizon = CInt(txtHorizon.Text)
+
+    lblStatus.Caption = "Running SES..."
+    DoEvents
+    sesResult = TimeSeriesAnalysis.SimpleExponentialSmoothing(tsData, horizon)
+
+    lblStatus.Caption = "Running Holt-Winters..."
+    DoEvents
+    Dim seasonalType As String
+    seasonalType = LCase(cboSeasonalType.Text)
+    hwResult = TimeSeriesAnalysis.HoltWinters(tsData, horizon, seasonalType)
+
+    lblStatus.Caption = "Running decomposition..."
+    DoEvents
+    decompResult = TimeSeriesAnalysis.Decompose(tsData, seasonalType)
+
+    lblStatus.Caption = "Displaying results..."
+    DoEvents
+    Call DisplayResults
+
+    lblStatus.Caption = "Analysis complete!"
+    lblStatus.ForeColor = RGB(0, 128, 0)
+    EnableControls True
+
+    MsgBox "Analysis complete! Check the result sheets.", vbInformation
+    Exit Sub
+
+ErrorHandler:
+    MsgBox "Error: " & Err.Description, vbCritical
+    lblStatus.Caption = "Analysis failed"
+    lblStatus.ForeColor = RGB(255, 0, 0)
+    EnableControls True
+End Sub
+
+' Export button
+Private Sub btnExport_Click()
+    On Error GoTo ErrorHandler
+
+    If IsEmpty(sesResult.ForecastValues) Then
+        MsgBox "Please run analysis first.", vbExclamation: Exit Sub
+    End If
+
+    Dim fileName As Variant
+    fileName = Application.GetSaveAsFilename("forecast_results.csv", "CSV Files (*.csv), *.csv")
+
+    If fileName <> False Then
+        Call ExportResultsToCSV(CStr(fileName))
+        MsgBox "Results exported successfully!", vbInformation
+    End If
+    Exit Sub
+
+ErrorHandler:
+    MsgBox "Error: " & Err.Description, vbCritical
+End Sub
+
+' View Charts button
+Private Sub btnViewCharts_Click()
+    Call ChartUtilities.GenerateAllCharts(tsData, sesResult, hwResult, decompResult)
+    MsgBox "Charts updated! Check 'Charts' sheet.", vbInformation
+End Sub
+
+' Close button
+Private Sub btnClose_Click()
+    Unload Me
+End Sub
+
+' Helper functions
+Private Sub EnableControls(ByVal enabled As Boolean)
+    btnBrowseFile.enabled = enabled
+    btnLoadData.enabled = enabled
+    txtFilePath.enabled = enabled
+    txtColumnName.enabled = enabled
+    txtFrequency.enabled = enabled
+    txtHorizon.enabled = enabled
+    cboSeasonalType.enabled = enabled
+    btnAnalyze.enabled = enabled
+End Sub
+
+Private Function ReadCSVData(ByVal filePath As String, ByVal columnName As String) As Double()
+    Dim fso As Object, txtStream As Object
+    Dim line As String, headers() As String, fields() As String
+    Dim columnIndex As Long, dataList As Collection
+    Dim result() As Double, i As Long, value As Double
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    Set txtStream = fso.OpenTextFile(filePath, 1)
+    Set dataList = New Collection
+
+    If Not txtStream.AtEndOfStream Then
+        line = txtStream.ReadLine
+        headers = Split(line, ",")
+        columnIndex = -1
+        For i = LBound(headers) To UBound(headers)
+            If Trim(headers(i)) = columnName Then
+                columnIndex = i: Exit For
+            End If
+        Next i
+        If columnIndex = -1 Then
+            txtStream.Close
+            Err.Raise vbObjectError + 1, , "Column not found"
+        End If
+    End If
+
+    Do While Not txtStream.AtEndOfStream
+        line = txtStream.ReadLine
+        If Trim(line) <> "" Then
+            fields = Split(line, ",")
+            If UBound(fields) >= columnIndex Then
+                If IsNumeric(Trim(fields(columnIndex))) Then
+                    dataList.Add CDbl(Trim(fields(columnIndex)))
+                End If
+            End If
+        End If
+    Loop
+    txtStream.Close
+
+    If dataList.Count > 0 Then
+        ReDim result(1 To dataList.Count)
+        For i = 1 To dataList.Count
+            result(i) = dataList(i)
+        Next i
+    Else
+        ReDim result(1 To 0)
+    End If
+
+    ReadCSVData = result
+End Function
+
+Private Sub DisplayResults()
+    Call ClearResultsSheets
+    Call DisplaySESResults
+    Call DisplayHWResults
+    Call DisplayDecomposition
+    Call DisplayDiagnostics
+End Sub
+
+Private Sub ClearResultsSheets()
+    On Error Resume Next
+    Dim ws As Worksheet
+    Set ws = GetOrCreateSheet("SES_Results"): ws.Cells.Clear
+    Set ws = GetOrCreateSheet("HW_Results"): ws.Cells.Clear
+    Set ws = GetOrCreateSheet("Decomposition"): ws.Cells.Clear
+    Set ws = GetOrCreateSheet("Diagnostics"): ws.Cells.Clear
+    Set ws = GetOrCreateSheet("Charts"): ws.Cells.Clear: ws.ChartObjects.Delete
+    On Error GoTo 0
+End Sub
+
+Private Function GetOrCreateSheet(ByVal sheetName As String) As Worksheet
+    Dim ws As Worksheet
+    On Error Resume Next
+    Set ws = ThisWorkbook.Worksheets(sheetName)
+    On Error GoTo 0
+    If ws Is Nothing Then
+        Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))
+        ws.Name = sheetName
+    End If
+    Set GetOrCreateSheet = ws
+End Function
+
+Private Sub DisplaySESResults()
+    Dim ws As Worksheet, i As Long, row As Long
+    Set ws = GetOrCreateSheet("SES_Results")
+    ws.Range("A1").value = "Simple Exponential Smoothing Results"
+    ws.Range("A1").Font.Bold = True: ws.Range("A1").Font.Size = 14
+
+    row = 3
+    ws.Cells(row, 1) = "Alpha:": ws.Cells(row, 2) = Format(sesResult.Alpha, "0.0000")
+    row = row + 2
+    ws.Cells(row, 1) = "MAPE:": ws.Cells(row, 2) = Format(sesResult.MAPE, "0.00") & "%"
+    row = row + 1
+    ws.Cells(row, 1) = "MAE:": ws.Cells(row, 2) = Format(sesResult.MAE, "0.0000")
+    row = row + 1
+    ws.Cells(row, 1) = "RMSE:": ws.Cells(row, 2) = Format(sesResult.RMSE, "0.0000")
+
+    row = row + 2
+    ws.Cells(row, 1) = "Period": ws.Cells(row, 2) = "Historical"
+    ws.Cells(row, 3) = "Fitted": ws.Cells(row, 4) = "Forecast"
+    ws.Range(ws.Cells(row, 1), ws.Cells(row, 4)).Font.Bold = True
+    row = row + 1
+
+    For i = LBound(tsData.Values) To UBound(tsData.Values)
+        ws.Cells(row, 1) = i - LBound(tsData.Values) + 1
+        ws.Cells(row, 2) = tsData.Values(i)
+        ws.Cells(row, 3) = sesResult.FittedValues(i)
+        row = row + 1
+    Next i
+
+    For i = 1 To UBound(sesResult.ForecastValues)
+        ws.Cells(row, 1) = UBound(tsData.Values) - LBound(tsData.Values) + 1 + i
+        ws.Cells(row, 4) = sesResult.ForecastValues(i)
+        row = row + 1
+    Next i
+    ws.Columns("A:D").AutoFit
+End Sub
+
+Private Sub DisplayHWResults()
+    Dim ws As Worksheet, i As Long, row As Long
+    Set ws = GetOrCreateSheet("HW_Results")
+    ws.Range("A1").value = "Holt-Winters Results"
+    ws.Range("A1").Font.Bold = True: ws.Range("A1").Font.Size = 14
+
+    row = 3
+    ws.Cells(row, 1) = "Alpha:": ws.Cells(row, 2) = Format(hwResult.Alpha, "0.0000")
+    row = row + 1
+    ws.Cells(row, 1) = "Beta:": ws.Cells(row, 2) = Format(hwResult.Beta, "0.0000")
+    row = row + 1
+    ws.Cells(row, 1) = "Gamma:": ws.Cells(row, 2) = Format(hwResult.Gamma, "0.0000")
+    row = row + 2
+    ws.Cells(row, 1) = "MAPE:": ws.Cells(row, 2) = Format(hwResult.MAPE, "0.00") & "%"
+    row = row + 1
+    ws.Cells(row, 1) = "MAE:": ws.Cells(row, 2) = Format(hwResult.MAE, "0.0000")
+    row = row + 1
+    ws.Cells(row, 1) = "RMSE:": ws.Cells(row, 2) = Format(hwResult.RMSE, "0.0000")
+
+    row = row + 2
+    ws.Cells(row, 1) = "Next Forecast:"
+    ws.Cells(row, 2) = Format(hwResult.ForecastValues(1), "0.00")
+    ws.Cells(row, 2).Font.Bold = True: ws.Cells(row, 2).Font.Size = 12
+
+    row = row + 2
+    ws.Cells(row, 1) = "Period": ws.Cells(row, 2) = "Historical"
+    ws.Cells(row, 3) = "Fitted": ws.Cells(row, 4) = "Forecast"
+    ws.Range(ws.Cells(row, 1), ws.Cells(row, 4)).Font.Bold = True
+    row = row + 1
+
+    For i = LBound(tsData.Values) To UBound(tsData.Values)
+        ws.Cells(row, 1) = i - LBound(tsData.Values) + 1
+        ws.Cells(row, 2) = tsData.Values(i)
+        ws.Cells(row, 3) = hwResult.FittedValues(i)
+        row = row + 1
+    Next i
+
+    For i = 1 To UBound(hwResult.ForecastValues)
+        ws.Cells(row, 1) = UBound(tsData.Values) - LBound(tsData.Values) + 1 + i
+        ws.Cells(row, 4) = hwResult.ForecastValues(i)
+        row = row + 1
+    Next i
+    ws.Columns("A:D").AutoFit
+End Sub
+
+Private Sub DisplayDecomposition()
+    Dim ws As Worksheet, i As Long, row As Long
+    Set ws = GetOrCreateSheet("Decomposition")
+    ws.Range("A1").value = "Time Series Decomposition"
+    ws.Range("A1").Font.Bold = True: ws.Range("A1").Font.Size = 14
+
+    row = 3
+    ws.Cells(row, 1) = "Period": ws.Cells(row, 2) = "Observed"
+    ws.Cells(row, 3) = "Trend": ws.Cells(row, 4) = "Seasonal": ws.Cells(row, 5) = "Random"
+    ws.Range(ws.Cells(row, 1), ws.Cells(row, 5)).Font.Bold = True
+    row = row + 1
+
+    For i = LBound(decompResult.Observed) To UBound(decompResult.Observed)
+        ws.Cells(row, 1) = i - LBound(decompResult.Observed) + 1
+        ws.Cells(row, 2) = decompResult.Observed(i)
+        If Not IsEmpty(decompResult.Trend(i)) Then ws.Cells(row, 3) = decompResult.Trend(i)
+        ws.Cells(row, 4) = decompResult.Seasonal(i)
+        If Not IsEmpty(decompResult.Random(i)) Then ws.Cells(row, 5) = decompResult.Random(i)
+        row = row + 1
+    Next i
+    ws.Columns("A:E").AutoFit
+End Sub
+
+Private Sub DisplayDiagnostics()
+    Dim ws As Worksheet, i As Long, row As Long
+    Set ws = GetOrCreateSheet("Diagnostics")
+    ws.Range("A1").value = "Diagnostic Information"
+    ws.Range("A1").Font.Bold = True: ws.Range("A1").Font.Size = 14
+
+    row = 3
+    ws.Cells(row, 1) = "Period": ws.Cells(row, 2) = "Residuals"
+    ws.Range(ws.Cells(row, 1), ws.Cells(row, 2)).Font.Bold = True
+    row = row + 1
+
+    For i = LBound(hwResult.Residuals) To UBound(hwResult.Residuals)
+        ws.Cells(row, 1) = i - LBound(hwResult.Residuals) + 1
+        ws.Cells(row, 2) = hwResult.Residuals(i)
+        row = row + 1
+    Next i
+
+    Dim maxLag As Integer
+    maxLag = WorksheetFunction.Min(30, (UBound(hwResult.Residuals) - LBound(hwResult.Residuals) + 1) \ 2)
+    Dim acf() As Double
+    acf = TimeSeriesAnalysis.CalculateACF(hwResult.Residuals, maxLag)
+
+    ws.Cells(3, 4) = "Lag": ws.Cells(3, 5) = "ACF"
+    ws.Range(ws.Cells(3, 4), ws.Cells(3, 5)).Font.Bold = True
+
+    For i = 0 To UBound(acf)
+        ws.Cells(4 + i, 4) = i
+        ws.Cells(4 + i, 5) = acf(i)
+    Next i
+    ws.Columns("A:E").AutoFit
+End Sub
+
+Private Sub ExportResultsToCSV(ByVal filePath As String)
+    Dim fso As Object, txtStream As Object, i As Long
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    Set txtStream = fso.CreateTextFile(filePath, True)
+
+    txtStream.WriteLine "Period,Historical,SES_Fitted,SES_Forecast,HW_Fitted,HW_Forecast"
+
+    For i = LBound(tsData.Values) To UBound(tsData.Values)
+        txtStream.WriteLine (i - LBound(tsData.Values) + 1) & "," & _
+            tsData.Values(i) & "," & sesResult.FittedValues(i) & ",," & hwResult.FittedValues(i) & ","
+    Next i
+
+    For i = 1 To UBound(sesResult.ForecastValues)
+        txtStream.WriteLine (UBound(tsData.Values) - LBound(tsData.Values) + 1 + i) & ",,," & _
+            sesResult.ForecastValues(i) & ",," & hwResult.ForecastValues(i)
+    Next i
+
+    txtStream.WriteLine ""
+    txtStream.WriteLine "MAPE,SES," & sesResult.MAPE & ",HW," & hwResult.MAPE
+    txtStream.Close
+End Sub

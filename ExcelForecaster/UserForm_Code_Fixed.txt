@@ -1,0 +1,195 @@
+Option Explicit
+
+Private tsData As TimeSeriesData
+Private sesResult As ForecastResult
+Private hwResult As ForecastResult
+Private decompResult As DecompositionResult
+
+Private Sub UserForm_Initialize()
+    txtFrequency.Text = "12"
+    txtHorizon.Text = "12"
+    cboSeasonalType.Clear
+    cboSeasonalType.AddItem "Additive"
+    cboSeasonalType.AddItem "Multiplicative"
+    cboSeasonalType.ListIndex = 0
+    lblStatus.Caption = "Ready"
+    lblStatus.ForeColor = RGB(0, 0, 255)
+End Sub
+
+Private Sub btnBrowseFile_Click()
+    Dim fd As FileDialog
+    Set fd = Application.FileDialog(msoFileDialogFilePicker)
+    With fd
+        .Title = "Select CSV File"
+        .Filters.Clear
+        .Filters.Add "CSV Files", "*.csv"
+        .AllowMultiSelect = False
+        If .Show = -1 Then txtFilePath.Text = .SelectedItems(1)
+    End With
+End Sub
+
+Private Sub btnLoadData_Click()
+    On Error GoTo ErrHandler
+
+    If Trim(txtFilePath.Text) = "" Then
+        MsgBox "Select CSV file", vbExclamation
+        Exit Sub
+    End If
+
+    If Trim(txtColumnName.Text) = "" Then
+        MsgBox "Enter column name", vbExclamation
+        Exit Sub
+    End If
+
+    If Not IsNumeric(txtFrequency.Text) Or Val(txtFrequency.Text) < 1 Then
+        MsgBox "Invalid frequency", vbExclamation
+        Exit Sub
+    End If
+
+    If Not IsNumeric(txtHorizon.Text) Or Val(txtHorizon.Text) < 1 Then
+        MsgBox "Invalid horizon", vbExclamation
+        Exit Sub
+    End If
+
+    lblStatus.Caption = "Loading..."
+    lblStatus.ForeColor = RGB(0, 0, 255)
+    DoEvents
+
+    ' Load CSV data
+    Dim vals() As Double
+    vals = MainModule.ReadCSV(txtFilePath.Text, txtColumnName.Text)
+
+    ' Check if data was loaded
+    If UBound(vals) < LBound(vals) + 1 Then
+        MsgBox "Not enough data points. Need at least 2 data points.", vbExclamation
+        lblStatus.Caption = "Error: insufficient data"
+        lblStatus.ForeColor = RGB(255, 0, 0)
+        Exit Sub
+    End If
+
+    ' Initialize tsData properly
+    tsData.Values = vals
+    tsData.Frequency = CInt(txtFrequency.Text)
+
+    lblStatus.Caption = "Loaded " & (UBound(vals) - LBound(vals) + 1) & " points"
+    lblStatus.ForeColor = RGB(0, 128, 0)
+    Exit Sub
+
+ErrHandler:
+    MsgBox "Error loading data: " & Err.Description, vbCritical
+    lblStatus.Caption = "Error loading data"
+    lblStatus.ForeColor = RGB(255, 0, 0)
+End Sub
+
+Private Sub btnAnalyze_Click()
+    On Error GoTo ErrHandler
+
+    ' Check if data is loaded
+    On Error Resume Next
+    Dim dataLoaded As Boolean
+    dataLoaded = (UBound(tsData.Values) >= LBound(tsData.Values))
+    On Error GoTo ErrHandler
+
+    If Not dataLoaded Then
+        MsgBox "Please load data first", vbExclamation
+        Exit Sub
+    End If
+
+    lblStatus.Caption = "Analyzing..."
+    lblStatus.ForeColor = RGB(0, 0, 255)
+    DoEvents
+
+    Dim h As Integer
+    h = CInt(txtHorizon.Text)
+
+    ' Run forecasting algorithms
+    lblStatus.Caption = "Running SES..."
+    DoEvents
+    sesResult = TimeSeriesAnalysis.SimpleExponentialSmoothing(tsData, h)
+
+    lblStatus.Caption = "Running Holt-Winters..."
+    DoEvents
+    hwResult = TimeSeriesAnalysis.HoltWinters(tsData, h, LCase(cboSeasonalType.Text))
+
+    lblStatus.Caption = "Running decomposition..."
+    DoEvents
+    decompResult = TimeSeriesAnalysis.Decompose(tsData, LCase(cboSeasonalType.Text))
+
+    lblStatus.Caption = "Displaying results..."
+    DoEvents
+    Call MainModule.DisplayAllResults(tsData, sesResult, hwResult, decompResult)
+
+    lblStatus.Caption = "Complete!"
+    lblStatus.ForeColor = RGB(0, 128, 0)
+
+    MsgBox "Analysis complete! Check result sheets.", vbInformation
+    Exit Sub
+
+ErrHandler:
+    MsgBox "Error during analysis: " & Err.Description, vbCritical
+    lblStatus.Caption = "Analysis failed"
+    lblStatus.ForeColor = RGB(255, 0, 0)
+End Sub
+
+Private Sub btnViewCharts_Click()
+    On Error GoTo ErrHandler
+
+    ' Check if results exist
+    On Error Resume Next
+    Dim resultsExist As Boolean
+    resultsExist = (UBound(sesResult.ForecastValues) >= LBound(sesResult.ForecastValues))
+    On Error GoTo ErrHandler
+
+    If Not resultsExist Then
+        MsgBox "Please run analysis first", vbExclamation
+        Exit Sub
+    End If
+
+    lblStatus.Caption = "Creating charts..."
+    lblStatus.ForeColor = RGB(0, 0, 255)
+    DoEvents
+
+    Call ChartUtilities.GenerateAllCharts(tsData, sesResult, hwResult, decompResult)
+
+    lblStatus.Caption = "Charts created!"
+    lblStatus.ForeColor = RGB(0, 128, 0)
+
+    MsgBox "Charts updated! Check 'Charts' sheet.", vbInformation
+    Exit Sub
+
+ErrHandler:
+    MsgBox "Error creating charts: " & Err.Description, vbCritical
+    lblStatus.Caption = "Chart creation failed"
+    lblStatus.ForeColor = RGB(255, 0, 0)
+End Sub
+
+Private Sub btnExport_Click()
+    On Error GoTo ErrHandler
+
+    ' Check if results exist
+    On Error Resume Next
+    Dim resultsExist As Boolean
+    resultsExist = (UBound(sesResult.ForecastValues) >= LBound(sesResult.ForecastValues))
+    On Error GoTo ErrHandler
+
+    If Not resultsExist Then
+        MsgBox "Please run analysis first", vbExclamation
+        Exit Sub
+    End If
+
+    Dim f As Variant
+    f = Application.GetSaveAsFilename("forecast_results.csv", "CSV (*.csv), *.csv")
+
+    If f <> False Then
+        Call MainModule.ExportResults(CStr(f), tsData, sesResult, hwResult)
+        MsgBox "Results exported successfully!", vbInformation
+    End If
+    Exit Sub
+
+ErrHandler:
+    MsgBox "Error exporting: " & Err.Description, vbCritical
+End Sub
+
+Private Sub btnClose_Click()
+    Unload Me
+End Sub
