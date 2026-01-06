@@ -1,0 +1,291 @@
+=========================================================================
+BATCH FORECASTING GUI - USERFORM LAYOUT SPECIFICATION
+Enhanced GUI for Multi-Component (50-60+) Time Series Forecasting
+=========================================================================
+
+FORM PROPERTIES:
+- Name: BatchForecastGUI
+- Caption: "Batch Forecasting Tool - Multi-Component Analysis"
+- Width: 520
+- Height: 480
+- StartUpPosition: CenterOwner
+
+=========================================================================
+CONTROLS LAYOUT (Top to Bottom):
+=========================================================================
+
+1. TITLE LABEL
+   - Name: lblTitle
+   - Caption: "Time Series Forecasting Tool - Batch Processing"
+   - Top: 10, Left: 20
+   - Width: 480, Height: 20
+   - Font: Bold, Size 14
+   - ForeColor: Blue
+
+-------------------------------------------------------------------------
+2. MODE SELECTION FRAME
+   - Name: frameMode
+   - Caption: "Processing Mode"
+   - Top: 40, Left: 20
+   - Width: 480, Height: 50
+
+   Inside frameMode:
+   a) optSingleComponent
+      - Caption: "Single Component"
+      - Top: 20, Left: 20
+      - Width: 150, Height: 20
+
+   b) optBatchComponent
+      - Caption: "Batch Processing (Multiple Components)"
+      - Top: 20, Left: 200
+      - Width: 250, Height: 20
+
+-------------------------------------------------------------------------
+3. FILE INPUT SECTION
+   - Top: 100, Left: 20
+
+   a) Label: "CSV File:"
+      - Top: 100, Left: 20
+      - Width: 80, Height: 15
+
+   b) txtFilePath
+      - Top: 100, Left: 110
+      - Width: 300, Height: 20
+
+   c) btnBrowseFile
+      - Caption: "Browse"
+      - Top: 97, Left: 420
+      - Width: 80, Height: 25
+
+-------------------------------------------------------------------------
+4. DATA FORMAT FRAME (Batch Mode Only)
+   - Name: frameDataFormat
+   - Caption: "Data Format"
+   - Top: 130, Left: 20
+   - Width: 480, Height: 50
+
+   Inside frameDataFormat:
+   a) Label: "Format:"
+      - Top: 20, Left: 10
+      - Width: 60, Height: 15
+
+   b) cboDataFormat
+      - Top: 18, Left: 80
+      - Width: 380, Height: 20
+      - Items:
+        * "Wide Format (Period | Comp1 | Comp2 | ...)"
+        * "Long Format (Component | Period | Value)"
+
+-------------------------------------------------------------------------
+5. SINGLE COMPONENT PARAMETERS (Single Mode Only)
+   - Top: 190, Left: 20
+
+   a) Label: "Column Name:"
+      - Top: 190, Left: 20
+      - Width: 90, Height: 15
+
+   b) txtColumnName
+      - Top: 190, Left: 120
+      - Width: 200, Height: 20
+
+-------------------------------------------------------------------------
+6. ANALYSIS PARAMETERS
+   - Top: 220, Left: 20
+
+   a) Label: "Frequency:"
+      - Top: 220, Left: 20
+      - Width: 90, Height: 15
+
+   b) txtFrequency
+      - Top: 220, Left: 120
+      - Width: 80, Height: 20
+      - Default: "12"
+
+   c) Label: "(12=Monthly, 4=Quarterly)"
+      - Top: 220, Left: 210
+      - Width: 180, Height: 15
+      - ForeColor: Gray
+
+   d) Label: "Forecast Horizon:"
+      - Top: 245, Left: 20
+      - Width: 100, Height: 15
+
+   e) txtHorizon
+      - Top: 245, Left: 120
+      - Width: 80, Height: 20
+      - Default: "12"
+
+   f) Label: "Seasonal Type:"
+      - Top: 270, Left: 20
+      - Width: 90, Height: 15
+
+   g) cboSeasonalType
+      - Top: 270, Left: 120
+      - Width: 150, Height: 20
+      - Items: "Additive", "Multiplicative"
+
+-------------------------------------------------------------------------
+7. BATCH OPTIONS FRAME (Batch Mode Only)
+   - Name: frameBatchOptions
+   - Caption: "Batch Processing Options"
+   - Top: 300, Left: 20
+   - Width: 480, Height: 70
+
+   Inside frameBatchOptions:
+   a) chkQuickMode
+      - Caption: "Quick Mode (Metrics only, no detailed charts)"
+      - Top: 20, Left: 20
+      - Width: 300, Height: 20
+      - Default: Checked
+
+   b) chkFullDiagnostics
+      - Caption: "Full Diagnostics (Top/Bottom 10% of components)"
+      - Top: 45, Left: 20
+      - Width: 350, Height: 20
+      - Default: Unchecked
+
+   c) lblComponentCount
+      - Caption: "Components Loaded:"
+      - Top: 20, Left: 330
+      - Width: 130, Height: 15
+
+   d) lblComponentCountValue
+      - Caption: "0"
+      - Top: 40, Left: 330
+      - Width: 130, Height: 20
+      - Font: Bold
+      - ForeColor: Blue
+
+-------------------------------------------------------------------------
+8. PROGRESS FRAME (Batch Mode Only)
+   - Name: frameProgress
+   - Caption: "Processing Progress"
+   - Top: 380, Left: 20
+   - Width: 480, Height: 60
+   - Visible: False initially
+
+   Inside frameProgress:
+   a) lblProgress
+      - Caption: "Ready"
+      - Top: 20, Left: 10
+      - Width: 460, Height: 15
+
+   b) progressBar (Shape object or Label with BackColor)
+      - Name: progressBar
+      - Top: 38, Left: 10
+      - Width: 0 (dynamically updated)
+      - Height: 10
+      - BackColor: Green
+      - BorderStyle: 1
+
+-------------------------------------------------------------------------
+9. ACTION BUTTONS
+   - Top: 450, Left: 20
+
+   a) btnLoadData
+      - Caption: "Load Data"
+      - Top: 450, Left: 20
+      - Width: 90, Height: 30
+
+   b) btnAnalyze
+      - Caption: "Analyze"
+      - Top: 450, Left: 120
+      - Width: 90, Height: 30
+      - Enabled: False initially
+
+   c) btnViewCharts
+      - Caption: "View Results"
+      - Top: 450, Left: 220
+      - Width: 90, Height: 30
+      - Enabled: False initially
+
+   d) btnExport
+      - Caption: "Export"
+      - Top: 450, Left: 320
+      - Width: 90, Height: 30
+      - Enabled: False initially
+
+   e) btnClose
+      - Caption: "Close"
+      - Top: 450, Left: 420
+      - Width: 80, Height: 30
+
+-------------------------------------------------------------------------
+10. STATUS LABEL
+    - Name: lblStatus
+    - Caption: "Status: Ready"
+    - Top: 490, Left: 20
+    - Width: 480, Height: 20
+    - ForeColor: Blue
+    - Font: Bold
+
+=========================================================================
+VISUAL MOCKUP:
+=========================================================================
+
+┌─────────────────────────────────────────────────────────────────┐
+│  Time Series Forecasting Tool - Batch Processing               │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌─ Processing Mode ────────────────────────────────────────┐  │
+│  │  ○ Single Component   ● Batch Processing (Multiple)     │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│                                                                 │
+│  CSV File: [_______________________________] [Browse]          │
+│                                                                 │
+│  ┌─ Data Format ────────────────────────────────────────────┐  │
+│  │  Format: [Wide Format (Period | Comp1 | Comp2 ....) ▼]  │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│                                                                 │
+│  Column Name: [_______________]  (Single mode only)            │
+│                                                                 │
+│  Frequency:        [12]  (12=Monthly, 4=Quarterly)             │
+│  Forecast Horizon: [12]                                        │
+│  Seasonal Type:    [Additive    ▼]                             │
+│                                                                 │
+│  ┌─ Batch Processing Options ──────────────────────────────┐  │
+│  │  ☑ Quick Mode (Metrics only)      Components Loaded:    │  │
+│  │  ☐ Full Diagnostics (Top/Bottom)        60              │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│                                                                 │
+│  ┌─ Processing Progress ────────────────────────────────────┐  │
+│  │  Processing 35 of 60: Component_ABC_2024                │  │
+│  │  [████████████████░░░░░░░░░░░]  58%                      │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│                                                                 │
+│  [Load Data] [Analyze] [View Results] [Export] [Close]        │
+│                                                                 │
+│  Status: Successfully loaded 60 components                     │
+└─────────────────────────────────────────────────────────────────┘
+
+=========================================================================
+BEHAVIOR NOTES:
+=========================================================================
+
+1. Mode Selection:
+   - Single Component: Shows txtColumnName, hides batch options
+   - Batch Processing: Hides txtColumnName, shows batch options
+
+2. Button States:
+   - Load Data: Always enabled
+   - Analyze: Enabled after data loaded
+   - View Results: Enabled after analysis complete
+   - Export: Enabled after analysis complete
+
+3. Progress Updates:
+   - Progress frame only visible in batch mode during processing
+   - Progress bar updates for each component processed
+   - Status label shows real-time component being processed
+
+4. Quick Mode vs Full Diagnostics:
+   - Quick Mode: Only metrics table, summary charts (fast)
+   - Full Diagnostics: Detailed charts for top/bottom 10% (slower)
+   - Mutually exclusive options
+
+5. Color Coding:
+   - Blue: Info/Ready
+   - Green: Success
+   - Orange: Processing
+   - Red: Error
+
+=========================================================================
