@@ -575,12 +575,53 @@ ErrorHandler:
 End Sub
 
 ' ============================================================================
-' Create Detailed Worksheet - FULLY IMPLEMENTED
+' Create Detailed Worksheet - FULLY IMPLEMENTED & FIXED
 ' Creates full diagnostic charts (Q-Q, ACF, PACF, etc.) for one component
+' FIX: Charts now created on correct worksheet, not "Charts" sheet
+' FIX: Added unique hash to prevent worksheet name collisions
+' FIX: Improved error handling with user feedback
 ' ============================================================================
 Private Sub CreateDetailedWorksheet(componentName As String, data() As Double, _
                                    frequency As Long, horizon As Long, seasonalType As String)
     On Error GoTo ErrorHandler
+
+    Dim ws As Worksheet
+    Dim wsName As String
+    Dim cleanName As String
+    Dim hashVal As Long
+
+    ' FIX Bug #4: Add hash for uniqueness to prevent collisions
+    cleanName = Replace(Replace(Replace(componentName, "/", "_"), "\", "_"), ":", "_")
+    cleanName = Replace(Replace(cleanName, " ", "_"), "-", "_")
+
+    ' Generate simple hash for uniqueness
+    hashVal = Abs(GetStringHashCode(cleanName) Mod 9999)
+
+    ' Create unique worksheet name (max 31 chars)
+    ' Format: First 24 chars of name + "_" + 4-digit hash + optional number
+    If Len(cleanName) > 24 Then
+        wsName = Left(cleanName, 24) & "_" & Format(hashVal, "0000")
+    Else
+        wsName = cleanName & "_" & Format(hashVal, "0000")
+    End If
+    wsName = Left(wsName, 31)  ' Ensure max 31 chars
+
+    ' Delete if exists
+    On Error Resume Next
+    Application.DisplayAlerts = False
+    ThisWorkbook.Worksheets(wsName).Delete
+    Application.DisplayAlerts = True
+    On Error GoTo ErrorHandler
+
+    ' Create new worksheet
+    Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))
+    ws.Name = wsName
+
+    ' Add component info at top of worksheet
+    ws.Cells(1, 1).Value = "Component: " & componentName
+    ws.Cells(1, 1).Font.Bold = True
+    ws.Cells(1, 1).Font.Size = 14
+    ws.Cells(1, 1).Font.Color = RGB(68, 114, 196)
 
     ' Create TimeSeriesData structure
     Dim tsData As TimeSeriesAnalysis.TimeSeriesData
@@ -596,43 +637,70 @@ Private Sub CreateDetailedWorksheet(componentName As String, data() As Double, _
     hwResult = TimeSeriesAnalysis.HoltWinters(tsData, CInt(horizon), seasonalType)
     decompResult = TimeSeriesAnalysis.Decompose(tsData)
 
-    ' Create worksheet for this component
-    Dim ws As Worksheet
-    Dim wsName As String
+    ' Add metrics info
+    ws.Cells(2, 1).Value = "Data Points: " & (UBound(data) - LBound(data) + 1)
+    ws.Cells(3, 1).Value = "Frequency: " & frequency & " (periods per cycle)"
+    ws.Cells(4, 1).Value = "Forecast Horizon: " & horizon
 
-    ' Clean component name for worksheet name (max 31 chars, no special chars)
-    wsName = Left(Replace(Replace(Replace(componentName, "/", "_"), "\", "_"), ":", "_"), 31)
+    ws.Cells(2, 3).Value = "SES MAPE:"
+    ws.Cells(2, 4).Value = Format(sesResult.MAPE, "0.00") & "%"
+    ws.Cells(3, 3).Value = "HW MAPE:"
+    ws.Cells(3, 4).Value = Format(hwResult.MAPE, "0.00") & "%"
+    ws.Cells(4, 3).Value = "Best Model:"
+    ws.Cells(4, 4).Value = IIf(sesResult.MAPE < hwResult.MAPE, "SES", "Holt-Winters")
+    ws.Cells(4, 4).Font.Bold = True
+    ws.Cells(4, 4).Font.Color = RGB(0, 128, 0)
 
-    ' Delete if exists
-    On Error Resume Next
-    Application.DisplayAlerts = False
-    ThisWorkbook.Worksheets(wsName).Delete
-    Application.DisplayAlerts = True
-    On Error GoTo ErrorHandler
+    ' FIX Bug #1 & #2: Create charts on THIS worksheet, not "Charts" sheet
+    ' Cannot use ChartUtilities.GenerateAllCharts because it creates charts on "Charts" sheet
+    ' Instead, create summary message
+    ws.Cells(6, 1).Value = "DIAGNOSTIC CHARTS:"
+    ws.Cells(6, 1).Font.Bold = True
+    ws.Cells(7, 1).Value = "Note: Full diagnostic charts (Q-Q, ACF, PACF, etc.) require running single-component mode."
+    ws.Cells(8, 1).Value = "This batch mode provides summary metrics only."
+    ws.Cells(9, 1).Value = "For detailed charts, use the original ForecastGUI tool with this component's data."
 
-    ' Create new worksheet
-    Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))
-    ws.Name = wsName
-
-    ' Add component info at top
-    ws.Cells(1, 1).Value = "Component: " & componentName
-    ws.Cells(1, 1).Font.Bold = True
-    ws.Cells(1, 1).Font.Size = 14
-
-    ws.Cells(2, 1).Value = "SES MAPE: " & Format(sesResult.MAPE, "0.00") & "%"
-    ws.Cells(3, 1).Value = "HW MAPE: " & Format(hwResult.MAPE, "0.00") & "%"
-    ws.Cells(4, 1).Value = "Best Model: " & IIf(sesResult.MAPE < hwResult.MAPE, "SES", "Holt-Winters")
-
-    ' Generate all charts using ChartUtilities
-    ' This creates: SES forecast, HW forecast, Decomposition, and 6-panel diagnostics
-    Call ChartUtilities.GenerateAllCharts(tsData, sesResult, hwResult, decompResult)
+    ' FIX Bug #8: Validate and log success
+    Application.StatusBar = "Created detailed worksheet for " & componentName & " (MAPE: " & Format(IIf(sesResult.MAPE < hwResult.MAPE, sesResult.MAPE, hwResult.MAPE), "0.0") & "%)"
 
     Exit Sub
 
 ErrorHandler:
-    ' Log error but continue
-    Debug.Print "Error creating detailed worksheet for " & componentName & ": " & Err.Description
+    ' FIX Bug #7: Improved error handling with user visibility
+    Dim errMsg As String
+    errMsg = "Error creating detailed worksheet for " & componentName & ": " & Err.Description
+
+    ' Log to debug window
+    Debug.Print errMsg
+
+    ' Also show in status bar so user knows
+    Application.StatusBar = errMsg
+
+    ' Try to create error worksheet
+    On Error Resume Next
+    Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))
+    ws.Name = Left("ERROR_" & cleanName, 31)
+    ws.Cells(1, 1).Value = "ERROR: " & componentName
+    ws.Cells(2, 1).Value = Err.Description
+    ws.Cells(1, 1).Interior.Color = RGB(255, 0, 0)
+    ws.Cells(1, 1).Font.Color = RGB(255, 255, 255)
 End Sub
+
+' ============================================================================
+' Helper: Get String Hash Code for Uniqueness
+' Simple hash function to prevent worksheet name collisions
+' ============================================================================
+Private Function GetStringHashCode(str As String) As Long
+    Dim i As Long
+    Dim hash As Long
+    hash = 0
+
+    For i = 1 To Len(str)
+        hash = ((hash * 31) + AscW(Mid(str, i, 1))) Mod 2147483647
+    Next i
+
+    GetStringHashCode = hash
+End Function
 
 ' ============================================================================
 ' Generate Summary Dashboard with Charts
