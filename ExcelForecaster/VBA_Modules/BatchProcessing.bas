@@ -475,15 +475,23 @@ Private Sub CalculateABCClassification()
 End Sub
 
 ' ============================================================================
-' Create Top/Bottom Diagnostics - FIXED VERSION
+' Create Top/Bottom Diagnostics - FULLY IMPLEMENTED
 ' FIX: Now actually sorts by MAPE to get worst/best performers
+' Creates full 6-panel diagnostic charts for worst and best components
 ' ============================================================================
 Private Sub CreateTopBottomDiagnostics(dataWs As Worksheet, frequency As Long, horizon As Long, seasonalType As String)
+    On Error GoTo ErrorHandler
+
     ' Sort components by MAPE and create detailed diagnostics for worst/best
     Dim sortedIndices() As Long
-    Dim i As Long, j As Long
+    Dim i As Long, j As Long, idx As Long
     Dim temp As Long
     Dim numToProcess As Long
+    Dim dataArr() As Double
+    Dim lastRow As Long, col As Long
+    Dim componentName As String
+
+    Application.StatusBar = "Creating detailed diagnostics for top/bottom performers..."
 
     ' Create index array
     ReDim sortedIndices(1 To ComponentCount)
@@ -502,21 +510,128 @@ Private Sub CreateTopBottomDiagnostics(dataWs As Worksheet, frequency As Long, h
         Next j
     Next i
 
-    ' Process top/bottom 10% (minimum 2 components)
-    numToProcess = Application.WorksheetFunction.Max(2, ComponentCount * 0.1)
+    ' Process top/bottom 10% (minimum 2, maximum 10 components)
+    numToProcess = Application.WorksheetFunction.Max(2, Application.WorksheetFunction.Min(10, ComponentCount * 0.1))
 
-    ' TODO: Call ChartUtilities to create detailed sheets for worst performers
-    ' For i = 1 To numToProcess
-    '     ' Create detailed diagnostics for worst components
-    '     idx = sortedIndices(i)
-    '     Call CreateDetailedWorksheet(ComponentResults(idx).ComponentName, ...)
-    ' Next i
+    lastRow = dataWs.Cells(dataWs.Rows.Count, 1).End(xlUp).Row
 
-    ' TODO: Create detailed diagnostics for best performers
-    ' For i = ComponentCount - numToProcess + 1 To ComponentCount
-    '     idx = sortedIndices(i)
-    '     Call CreateDetailedWorksheet(ComponentResults(idx).ComponentName, ...)
-    ' Next i
+    ' Create detailed diagnostics for WORST performers
+    For i = 1 To numToProcess
+        idx = sortedIndices(i)
+
+        ' Skip if error
+        If Not ComponentResults(idx).HasError Then
+            componentName = ComponentResults(idx).ComponentName
+            col = idx + 1  ' Column index in data worksheet (idx is 1-based, but col 1 is Period)
+
+            ' Extract data for this component
+            ReDim dataArr(1 To lastRow - 1)
+            For j = 2 To lastRow
+                On Error Resume Next
+                dataArr(j - 1) = CDbl(dataWs.Cells(j, col).Value)
+                If Err.Number <> 0 Then dataArr(j - 1) = 0
+                Err.Clear
+                On Error GoTo ErrorHandler
+            Next j
+
+            Application.StatusBar = "Creating diagnostics for WORST #" & i & ": " & componentName & " (MAPE: " & Format(ComponentResults(idx).BestMAPE, "0.0") & "%)"
+            DoEvents
+
+            Call CreateDetailedWorksheet("WORST_" & i & "_" & componentName, dataArr, frequency, horizon, seasonalType)
+        End If
+    Next i
+
+    ' Create detailed diagnostics for BEST performers
+    For i = ComponentCount - numToProcess + 1 To ComponentCount
+        idx = sortedIndices(i)
+
+        ' Skip if error
+        If Not ComponentResults(idx).HasError Then
+            componentName = ComponentResults(idx).ComponentName
+            col = idx + 1
+
+            ' Extract data for this component
+            ReDim dataArr(1 To lastRow - 1)
+            For j = 2 To lastRow
+                On Error Resume Next
+                dataArr(j - 1) = CDbl(dataWs.Cells(j, col).Value)
+                If Err.Number <> 0 Then dataArr(j - 1) = 0
+                Err.Clear
+                On Error GoTo ErrorHandler
+            Next j
+
+            Application.StatusBar = "Creating diagnostics for BEST #" & (ComponentCount - i + 1) & ": " & componentName & " (MAPE: " & Format(ComponentResults(idx).BestMAPE, "0.0") & "%)"
+            DoEvents
+
+            Call CreateDetailedWorksheet("BEST_" & (ComponentCount - i + 1) & "_" & componentName, dataArr, frequency, horizon, seasonalType)
+        End If
+    Next i
+
+    Application.StatusBar = "Detailed diagnostics complete for " & (numToProcess * 2) & " components"
+    Exit Sub
+
+ErrorHandler:
+    Application.StatusBar = "Error creating detailed diagnostics: " & Err.Description
+End Sub
+
+' ============================================================================
+' Create Detailed Worksheet - FULLY IMPLEMENTED
+' Creates full diagnostic charts (Q-Q, ACF, PACF, etc.) for one component
+' ============================================================================
+Private Sub CreateDetailedWorksheet(componentName As String, data() As Double, _
+                                   frequency As Long, horizon As Long, seasonalType As String)
+    On Error GoTo ErrorHandler
+
+    ' Create TimeSeriesData structure
+    Dim tsData As TimeSeriesAnalysis.TimeSeriesData
+    tsData.Values = data
+    tsData.Frequency = CInt(frequency)
+
+    ' Run all analyses
+    Dim sesResult As TimeSeriesAnalysis.ForecastResult
+    Dim hwResult As TimeSeriesAnalysis.ForecastResult
+    Dim decompResult As TimeSeriesAnalysis.DecompositionResult
+
+    sesResult = TimeSeriesAnalysis.SimpleExponentialSmoothing(tsData, CInt(horizon))
+    hwResult = TimeSeriesAnalysis.HoltWinters(tsData, CInt(horizon), seasonalType)
+    decompResult = TimeSeriesAnalysis.Decompose(tsData)
+
+    ' Create worksheet for this component
+    Dim ws As Worksheet
+    Dim wsName As String
+
+    ' Clean component name for worksheet name (max 31 chars, no special chars)
+    wsName = Left(Replace(Replace(Replace(componentName, "/", "_"), "\", "_"), ":", "_"), 31)
+
+    ' Delete if exists
+    On Error Resume Next
+    Application.DisplayAlerts = False
+    ThisWorkbook.Worksheets(wsName).Delete
+    Application.DisplayAlerts = True
+    On Error GoTo ErrorHandler
+
+    ' Create new worksheet
+    Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))
+    ws.Name = wsName
+
+    ' Add component info at top
+    ws.Cells(1, 1).Value = "Component: " & componentName
+    ws.Cells(1, 1).Font.Bold = True
+    ws.Cells(1, 1).Font.Size = 14
+
+    ws.Cells(2, 1).Value = "SES MAPE: " & Format(sesResult.MAPE, "0.00") & "%"
+    ws.Cells(3, 1).Value = "HW MAPE: " & Format(hwResult.MAPE, "0.00") & "%"
+    ws.Cells(4, 1).Value = "Best Model: " & IIf(sesResult.MAPE < hwResult.MAPE, "SES", "Holt-Winters")
+
+    ' Generate all charts using ChartUtilities
+    ' This creates: SES forecast, HW forecast, Decomposition, and 6-panel diagnostics
+    Call ChartUtilities.GenerateAllCharts(tsData, sesResult, hwResult, decompResult)
+
+    Exit Sub
+
+ErrorHandler:
+    ' Log error but continue
+    Debug.Print "Error creating detailed worksheet for " & componentName & ": " & Err.Description
 End Sub
 
 ' ============================================================================

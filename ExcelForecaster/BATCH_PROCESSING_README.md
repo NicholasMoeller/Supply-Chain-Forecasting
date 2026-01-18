@@ -45,6 +45,16 @@ Batch Processing Mode:
 
 ## ✨ Key Features
 
+### ✅ FULLY INTEGRATED GUI - ONE TOOL FOR EVERYTHING!
+
+**NEW:** Full diagnostics mode now creates complete 6-panel diagnostic charts (Q-Q plots, ACF, PACF, residuals, histogram, Ljung-Box) for worst and best performers automatically!
+
+**Two Modes in One GUI:**
+- **Quick Mode:** Summary metrics for all SKUs (fast screening)
+- **Full Diagnostics:** Everything from Quick Mode PLUS complete diagnostic charts for top/bottom 10%
+
+**No more switching between tools!** One integrated GUI handles both batch processing AND deep-dive analysis.
+
 ### Automated Multi-Component Analysis
 - ✅ Load CSV with 50-60 columns (one per component)
 - ✅ Runs SES and Holt-Winters on all components
