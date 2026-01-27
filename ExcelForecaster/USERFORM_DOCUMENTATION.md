@@ -2,7 +2,9 @@
 
 ## Overview
 
-The Supply Chain Forecasting Tool includes two pre-built UserForm interfaces that provide a complete graphical user interface (GUI) for time series forecasting. **These forms are already included in the project** and do not need to be created programmatically.
+The Supply Chain Forecasting Tool includes two **optional** pre-built UserForm interfaces that provide a graphical user interface (GUI) for time series forecasting.
+
+**Important:** UserForms are completely optional! The tool works perfectly fine using VBA functions directly without any GUI. Import the UserForms only if you want the graphical interface.
 
 ## UserForms Included
 
@@ -207,25 +209,45 @@ The `AutoSetup.bas` module has been **updated** to:
 
 ### How to Use
 
-1. **Open the Excel workbook** (must be `.xlsm` format)
+**Option 1: No GUI (Simplest - Just Import Modules and Run)**
 
-2. **Import UserForms** (if not already imported):
+1. **Import VBA modules** (.bas files only):
    - Open VBA Editor (Alt+F11)
    - File → Import File
-   - Select `ForecastGUI.frm`
-   - Select `BatchForecastGUI.frm`
+   - Import all `.bas` files from VBA_Modules folder
 
-3. **Run Setup**:
+2. **Run Setup**:
    ```vba
    AutoSetup.CreateCompleteApplication
    ```
 
-4. **Launch Forms**:
+3. **Use VBA functions directly**:
    ```vba
-   ' Single component
-   ForecastGUI.Show
+   ' Single component forecast
+   MainModule.RunForecast()
 
    ' Batch processing
+   BatchProcessing.ProcessAllComponents(12, 12, "additive", False)
+   ```
+
+**Option 2: With GUI (Optional)**
+
+1. **Import VBA modules AND UserForms**:
+   - Import all `.bas` files
+   - Import `ForecastGUI.frm` (optional)
+   - Import `BatchForecastGUI.frm` (optional)
+
+2. **Run Setup**:
+   ```vba
+   AutoSetup.CreateCompleteApplication
+   ```
+
+3. **Launch Forms**:
+   ```vba
+   ' Single component GUI
+   ForecastGUI.Show
+
+   ' Batch processing GUI
    BatchForecastGUI.Show
    ```
 

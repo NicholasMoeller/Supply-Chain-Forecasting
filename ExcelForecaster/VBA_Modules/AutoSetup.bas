@@ -14,11 +14,10 @@ Public Sub CreateCompleteApplication()
     Dim response As VbMsgBoxResult
 
     ' Welcome message
-    response = MsgBox("This will automatically create the Time Series Forecasting Tool!" & vbCrLf & vbCrLf & _
-                     "This includes:" & vbCrLf & _
-                     "• Dashboard worksheet" & vbCrLf & _
+    response = MsgBox("This will set up the Time Series Forecasting Tool!" & vbCrLf & vbCrLf & _
+                     "This will create:" & vbCrLf & _
+                     "• Dashboard worksheet with launch button" & vbCrLf & _
                      "• All necessary setup" & vbCrLf & vbCrLf & _
-                     "Note: UserForms (ForecastGUI and BatchForecastGUI) are already included!" & vbCrLf & vbCrLf & _
                      "This will take about 5 seconds. Continue?", _
                      vbQuestion + vbYesNo, "Automated Setup")
 
@@ -27,25 +26,40 @@ Public Sub CreateCompleteApplication()
     Application.ScreenUpdating = False
     Application.DisplayAlerts = False
 
-    ' Step 1: Verify UserForms exist
-    MsgBox "Step 1/2: Verifying UserForms...", vbInformation, "Setup Progress"
-    Call VerifyUserForms
-
-    ' Step 2: Setup Dashboard
-    MsgBox "Step 2/2: Creating Dashboard...", vbInformation, "Setup Progress"
+    ' Step 1: Setup Dashboard
+    MsgBox "Step 1/1: Creating Dashboard...", vbInformation, "Setup Progress"
     Call MainModule.SetupWorkbook
 
     Application.ScreenUpdating = True
     Application.DisplayAlerts = True
 
     ' Success message
+    Dim guiStatus As String
+    guiStatus = ""
+
+    ' Check if UserForms are available (optional)
+    On Error Resume Next
+    Dim hasGUI As Boolean
+    hasGUI = False
+    Dim vbComp As Object
+    Set vbComp = ThisWorkbook.VBProject.VBComponents("ForecastGUI")
+    If Not vbComp Is Nothing Then hasGUI = True
+    On Error GoTo 0
+
+    If hasGUI Then
+        guiStatus = vbCrLf & "2. Click 'Launch Forecasting Tool' on the Dashboard (GUI)" & vbCrLf & _
+                    "   OR use VBA functions directly"
+    Else
+        guiStatus = vbCrLf & "2. Use VBA functions to run forecasts:" & vbCrLf & _
+                    "   - MainModule.RunForecast()" & vbCrLf & _
+                    "   - BatchProcessing.ProcessAllComponents()"
+    End If
+
     MsgBox "✓ Setup Complete!" & vbCrLf & vbCrLf & _
-           "Your Time Series Forecasting Tool is ready to use!" & vbCrLf & vbCrLf & _
+           "Your Time Series Forecasting Tool is ready!" & vbCrLf & vbCrLf & _
            "Next steps:" & vbCrLf & _
-           "1. Save this workbook as .xlsm" & vbCrLf & _
-           "2. Click 'Launch Forecasting Tool' on the Dashboard" & vbCrLf & _
-           "3. Load your CSV data and start forecasting!" & vbCrLf & vbCrLf & _
-           "Test the installation by running: TestInstallation", _
+           "1. Save this workbook as .xlsm" & guiStatus & vbCrLf & vbCrLf & _
+           "All VBA modules are imported and ready to use.", _
            vbInformation, "Setup Complete!"
 
     ' Activate Dashboard
@@ -59,13 +73,14 @@ ErrorHandler:
     Application.ScreenUpdating = True
     Application.DisplayAlerts = True
     MsgBox "Error during setup: " & Err.Description & vbCrLf & vbCrLf & _
-           "You may need to run the setup again or check the UserForm files manually.", _
+           "You may need to run the setup again.", _
            vbCritical, "Setup Error"
 End Sub
 
-Private Sub VerifyUserForms()
-    ' Verify that the required UserForms exist in the project
-    On Error GoTo ErrorHandler
+Private Sub CheckUserForms_Optional()
+    ' Optional check - UserForms are NOT required for basic functionality
+    ' The tool can be used entirely through VBA functions without a GUI
+    On Error Resume Next
 
     Dim VBProj As Object
     Dim foundForecastGUI As Boolean
@@ -77,34 +92,28 @@ Private Sub VerifyUserForms()
     foundBatchGUI = False
 
     ' Check for ForecastGUI
-    On Error Resume Next
     Set VBComp = VBProj.VBComponents("ForecastGUI")
     If Not VBComp Is Nothing Then foundForecastGUI = True
-    On Error GoTo ErrorHandler
 
     ' Check for BatchForecastGUI
-    On Error Resume Next
+    Set VBComp = Nothing
     Set VBComp = VBProj.VBComponents("BatchForecastGUI")
     If Not VBComp Is Nothing Then foundBatchGUI = True
-    On Error GoTo ErrorHandler
 
-    ' Report status
+    ' Report status (informational only)
     If foundForecastGUI And foundBatchGUI Then
-        Debug.Print "✓ Both UserForms found: ForecastGUI and BatchForecastGUI"
+        Debug.Print "✓ Optional GUI: Both UserForms found (ForecastGUI and BatchForecastGUI)"
     ElseIf foundForecastGUI Then
-        Debug.Print "✓ ForecastGUI found"
-        Debug.Print "⚠ Warning: BatchForecastGUI not found"
+        Debug.Print "✓ Optional GUI: ForecastGUI found"
+        Debug.Print "ℹ Note: BatchForecastGUI not found (optional)"
     ElseIf foundBatchGUI Then
-        Debug.Print "✓ BatchForecastGUI found"
-        Debug.Print "⚠ Warning: ForecastGUI not found"
+        Debug.Print "✓ Optional GUI: BatchForecastGUI found"
+        Debug.Print "ℹ Note: ForecastGUI not found (optional)"
     Else
-        Err.Raise vbObjectError + 1, "VerifyUserForms", "UserForms not found! Please ensure ForecastGUI.frm and BatchForecastGUI.frm are imported into the project."
+        Debug.Print "ℹ Note: No UserForms found - using VBA functions only (this is fine)"
     End If
 
-    Exit Sub
-
-ErrorHandler:
-    Err.Raise Err.Number, "VerifyUserForms", Err.Description
+    On Error GoTo 0
 End Sub
 
 ' ============================================================================

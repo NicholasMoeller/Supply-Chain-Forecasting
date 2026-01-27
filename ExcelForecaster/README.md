@@ -25,27 +25,42 @@ This is a complete Excel/VBA implementation of the Time Series Forecasting syste
 - 🔧 **Customizable** - Modify charts, add features
 - 💼 **Business Ready** - Professional output for reports
 
-## 🚀 Quick Start
+## 🚀 Quick Start (Simple - No GUI Required!)
 
-### Option 1: Import Pre-Built Modules (Fastest)
+### Easiest Method: Import Modules Only (Recommended)
 
 1. **Create a new Excel workbook**
 2. **Save as** `.xlsm` (Excel Macro-Enabled Workbook)
 3. **Open VBA Editor** (Press `Alt+F11`)
-4. **Import all modules**:
+4. **Import VBA modules** (.bas files only):
    - Go to `File` → `Import File...`
-   - Select and import each `.bas` and `.frm` file from `VBA_Modules/` folder:
+   - Import these files from `VBA_Modules/` folder:
      - `TimeSeriesAnalysis.bas`
      - `ChartUtilities.bas`
      - `MainModule.bas`
-     - `ForecastGUI.frm` (the UserForm)
-5. **Set up the UserForm controls** (see detailed instructions below)
-6. **Run** `MainModule.SetupWorkbook` to create the dashboard
-7. **Save** your workbook
+     - `AutoSetup.bas`
+     - `BatchProcessing.bas`
+5. **Run Setup**:
+   ```vba
+   AutoSetup.CreateCompleteApplication
+   ```
+6. **Done!** Use VBA functions directly:
+   ```vba
+   ' Single component
+   MainModule.RunForecast()
 
-### Option 2: Manual Setup (Full Control)
+   ' Batch processing
+   BatchProcessing.ProcessAllComponents(12, 12, "additive", False)
+   ```
 
-See the detailed [Setup Instructions](#detailed-setup-instructions) section below.
+### Optional: With GUI
+
+If you want the graphical interface:
+- Also import `ForecastGUI.frm` and `BatchForecastGUI.frm`
+- See [USERFORM_DOCUMENTATION.md](USERFORM_DOCUMENTATION.md) for details
+- Launch with `ForecastGUI.Show`
+
+**UserForms are completely optional** - the tool works perfectly without them!
 
 ## 📋 Requirements
 
