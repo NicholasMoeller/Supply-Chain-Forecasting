@@ -16,10 +16,10 @@ Public Sub CreateCompleteApplication()
     ' Welcome message
     response = MsgBox("This will automatically create the Time Series Forecasting Tool!" & vbCrLf & vbCrLf & _
                      "This includes:" & vbCrLf & _
-                     "• ForecastGUI UserForm with all controls" & vbCrLf & _
                      "• Dashboard worksheet" & vbCrLf & _
                      "• All necessary setup" & vbCrLf & vbCrLf & _
-                     "This will take about 10 seconds. Continue?", _
+                     "Note: UserForms (ForecastGUI and BatchForecastGUI) are already included!" & vbCrLf & vbCrLf & _
+                     "This will take about 5 seconds. Continue?", _
                      vbQuestion + vbYesNo, "Automated Setup")
 
     If response = vbNo Then Exit Sub
@@ -27,16 +27,13 @@ Public Sub CreateCompleteApplication()
     Application.ScreenUpdating = False
     Application.DisplayAlerts = False
 
-    ' Step 1: Create UserForm
-    MsgBox "Step 1/3: Creating UserForm and controls...", vbInformation, "Setup Progress"
-    Call CreateForecastGUI
+    ' Step 1: Verify UserForms exist
+    MsgBox "Step 1/2: Verifying UserForms...", vbInformation, "Setup Progress"
+    Call VerifyUserForms
 
     ' Step 2: Setup Dashboard
-    MsgBox "Step 2/3: Creating Dashboard...", vbInformation, "Setup Progress"
+    MsgBox "Step 2/2: Creating Dashboard...", vbInformation, "Setup Progress"
     Call MainModule.SetupWorkbook
-
-    ' Step 3: Finalize
-    MsgBox "Step 3/3: Finalizing setup...", vbInformation, "Setup Progress"
 
     Application.ScreenUpdating = True
     Application.DisplayAlerts = True
@@ -62,53 +59,60 @@ ErrorHandler:
     Application.ScreenUpdating = True
     Application.DisplayAlerts = True
     MsgBox "Error during setup: " & Err.Description & vbCrLf & vbCrLf & _
-           "You may need to run the setup again or create the UserForm manually.", _
+           "You may need to run the setup again or check the UserForm files manually.", _
            vbCritical, "Setup Error"
 End Sub
 
-Private Sub CreateForecastGUI()
+Private Sub VerifyUserForms()
+    ' Verify that the required UserForms exist in the project
     On Error GoTo ErrorHandler
 
     Dim VBProj As Object
+    Dim foundForecastGUI As Boolean
+    Dim foundBatchGUI As Boolean
     Dim VBComp As Object
-    Dim CodeMod As Object
-    Dim LineNum As Long
 
-    ' Access VBA Project
     Set VBProj = ThisWorkbook.VBProject
+    foundForecastGUI = False
+    foundBatchGUI = False
 
-    ' Check if ForecastGUI already exists and remove it
+    ' Check for ForecastGUI
     On Error Resume Next
     Set VBComp = VBProj.VBComponents("ForecastGUI")
-    If Not VBComp Is Nothing Then
-        VBProj.VBComponents.Remove VBComp
-    End If
+    If Not VBComp Is Nothing Then foundForecastGUI = True
     On Error GoTo ErrorHandler
 
-    ' Create new UserForm
-    Set VBComp = VBProj.VBComponents.Add(3) ' 3 = vbext_ct_MSForm
-    VBComp.Name = "ForecastGUI"
+    ' Check for BatchForecastGUI
+    On Error Resume Next
+    Set VBComp = VBProj.VBComponents("BatchForecastGUI")
+    If Not VBComp Is Nothing Then foundBatchGUI = True
+    On Error GoTo ErrorHandler
 
-    ' Set form properties
-    With VBComp.Properties
-        .Item("Caption").value = "Time Series Forecasting Tool"
-        .Item("Width").value = 540
-        .Item("Height").value = 420
-    End With
-
-    ' Add controls
-    Call AddControlsToForm(VBComp)
-
-    ' Add code to UserForm
-    Call AddCodeToUserForm(VBComp)
+    ' Report status
+    If foundForecastGUI And foundBatchGUI Then
+        Debug.Print "✓ Both UserForms found: ForecastGUI and BatchForecastGUI"
+    ElseIf foundForecastGUI Then
+        Debug.Print "✓ ForecastGUI found"
+        Debug.Print "⚠ Warning: BatchForecastGUI not found"
+    ElseIf foundBatchGUI Then
+        Debug.Print "✓ BatchForecastGUI found"
+        Debug.Print "⚠ Warning: ForecastGUI not found"
+    Else
+        Err.Raise vbObjectError + 1, "VerifyUserForms", "UserForms not found! Please ensure ForecastGUI.frm and BatchForecastGUI.frm are imported into the project."
+    End If
 
     Exit Sub
 
 ErrorHandler:
-    Err.Raise Err.Number, "CreateForecastGUI", Err.Description
+    Err.Raise Err.Number, "VerifyUserForms", Err.Description
 End Sub
 
-Private Sub AddControlsToForm(VBComp As Object)
+' ============================================================================
+' LEGACY FUNCTIONS - NO LONGER USED
+' UserForms are now pre-created as .frm files
+' ============================================================================
+
+Private Sub AddControlsToForm_LEGACY(VBComp As Object)
     Dim frm As Object
     Dim ctrl As Object
 
@@ -300,7 +304,7 @@ Private Sub AddControlsToForm(VBComp As Object)
 
 End Sub
 
-Private Sub AddCodeToUserForm(VBComp As Object)
+Private Sub AddCodeToUserForm_LEGACY(VBComp As Object)
     Dim CodeMod As Object
     Dim LineNum As Long
     Dim code As String
@@ -314,7 +318,7 @@ Private Sub AddCodeToUserForm(VBComp As Object)
 
 End Sub
 
-Private Function GetUserFormCode() As String
+Private Function GetUserFormCode_LEGACY() As String
     Dim code As String
 
     code = "Option Explicit" & vbCrLf & vbCrLf
