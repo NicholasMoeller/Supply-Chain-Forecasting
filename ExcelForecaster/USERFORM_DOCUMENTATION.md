@@ -2,9 +2,15 @@
 
 ## Overview
 
-The Supply Chain Forecasting Tool includes two **optional** pre-built UserForm interfaces that provide a graphical user interface (GUI) for time series forecasting.
+The Supply Chain Forecasting Tool includes two **pre-built, ready-to-use** UserForm interfaces that provide a complete graphical user interface (GUI) for time series forecasting.
 
-**Important:** UserForms are completely optional! The tool works perfectly fine using VBA functions directly without any GUI. Import the UserForms only if you want the graphical interface.
+**No Setup Required!** The UserForms are fully functional out of the box. Just import the `.frm` files and they work immediately - all controls, code, and functionality are already included.
+
+**Important Notes:**
+- ✅ UserForms are **pre-built** with all controls and code
+- ✅ No manual control creation or configuration needed
+- ✅ Just import and use
+- ℹ️ UserForms are optional - tool also works via VBA functions only
 
 ## UserForms Included
 
@@ -192,63 +198,77 @@ The Supply Chain Forecasting Tool includes two **optional** pre-built UserForm i
 
 ## Implementation Details
 
-### Pre-Built Forms
+### Pre-Built Forms - Ready to Use!
 
-Both UserForms are **already created** and included as `.frm` files in the VBA_Modules directory:
+Both UserForms are **completely pre-built** and included as `.frm` files in the VBA_Modules directory:
 
-- `ForecastGUI.frm` - Contains the full UserForm with all controls and code
-- `BatchForecastGUI.frm` - Contains the batch processing UserForm
+- `ForecastGUI.frm` - Full single-component GUI with all controls, code, and event handlers
+- `BatchForecastGUI.frm` - Complete batch processing GUI with progress tracking
 
-### AutoSetup Changes
+**What's Included:**
+- ✅ All visual controls (buttons, textboxes, labels, etc.) - already configured
+- ✅ Complete VBA code for all functionality
+- ✅ Event handlers for all buttons and actions
+- ✅ Form layout and styling
+- ✅ Binary data (.frx files) - auto-imported with .frm files
 
-The `AutoSetup.bas` module has been **updated** to:
-- ✅ Skip programmatic UserForm creation (forms already exist)
-- ✅ Verify that UserForms are present in the project
-- ✅ Set up dashboard and other components only
-- ✅ Faster setup process (2 steps instead of 3)
+**What You DON'T Need to Do:**
+- ❌ No manual control creation
+- ❌ No property configuration
+- ❌ No code writing for the forms
+- ❌ No layout design
+
+**Just import and use!**
+
+### AutoSetup Behavior
+
+The `AutoSetup.bas` module automatically:
+- ✅ Creates the Dashboard worksheet
+- ✅ Adds launch buttons
+- ✅ Detects if UserForms are present (optional check)
+- ✅ Works with or without UserForms imported
 
 ### How to Use
 
-**Option 1: No GUI (Simplest - Just Import Modules and Run)**
+**Recommended: Complete Setup with GUI (Everything Included)**
 
-1. **Import VBA modules** (.bas files only):
+1. **Import ALL files**:
    - Open VBA Editor (Alt+F11)
    - File → Import File
-   - Import all `.bas` files from VBA_Modules folder
+   - Import **all 7 files** from VBA_Modules folder:
+     - 5 `.bas` files (modules)
+     - 2 `.frm` files (pre-built UserForms with GUI)
 
 2. **Run Setup**:
    ```vba
    AutoSetup.CreateCompleteApplication
    ```
 
-3. **Use VBA functions directly**:
-   ```vba
-   ' Single component forecast
-   MainModule.RunForecast()
-
-   ' Batch processing
-   BatchProcessing.ProcessAllComponents(12, 12, "additive", False)
-   ```
-
-**Option 2: With GUI (Optional)**
-
-1. **Import VBA modules AND UserForms**:
-   - Import all `.bas` files
-   - Import `ForecastGUI.frm` (optional)
-   - Import `BatchForecastGUI.frm` (optional)
-
-2. **Run Setup**:
-   ```vba
-   AutoSetup.CreateCompleteApplication
-   ```
-
-3. **Launch Forms**:
+3. **Launch the GUI**:
    ```vba
    ' Single component GUI
    ForecastGUI.Show
 
    ' Batch processing GUI
    BatchForecastGUI.Show
+   ```
+
+**Done!** The UserForms are fully functional with all controls and code pre-configured.
+
+---
+
+**Alternative: VBA Functions Only (No GUI)**
+
+If you don't want the GUI interface:
+1. Only import the 5 `.bas` files (skip .frm files)
+2. Run setup
+3. Use VBA functions directly:
+   ```vba
+   ' Single component
+   MainModule.RunForecast()
+
+   ' Batch processing
+   BatchProcessing.ProcessAllComponents(12, 12, "additive", False)
    ```
 
 ---

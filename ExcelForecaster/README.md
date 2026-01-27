@@ -25,42 +25,44 @@ This is a complete Excel/VBA implementation of the Time Series Forecasting syste
 - 🔧 **Customizable** - Modify charts, add features
 - 💼 **Business Ready** - Professional output for reports
 
-## 🚀 Quick Start (Simple - No GUI Required!)
+## 🚀 Quick Start (Complete Tool with GUI)
 
-### Easiest Method: Import Modules Only (Recommended)
+### 3-Step Setup - Everything Included!
 
 1. **Create a new Excel workbook**
 2. **Save as** `.xlsm` (Excel Macro-Enabled Workbook)
 3. **Open VBA Editor** (Press `Alt+F11`)
-4. **Import VBA modules** (.bas files only):
+4. **Import ALL files** from `VBA_Modules/` folder:
    - Go to `File` → `Import File...`
-   - Import these files from `VBA_Modules/` folder:
+   - Import all **7 files**:
      - `TimeSeriesAnalysis.bas`
      - `ChartUtilities.bas`
      - `MainModule.bas`
      - `AutoSetup.bas`
      - `BatchProcessing.bas`
+     - `ForecastGUI.frm` ⭐ (GUI for single component)
+     - `BatchForecastGUI.frm` ⭐ (GUI for batch processing)
 5. **Run Setup**:
    ```vba
    AutoSetup.CreateCompleteApplication
    ```
-6. **Done!** Use VBA functions directly:
+6. **Done!** Launch the GUI:
    ```vba
-   ' Single component
-   MainModule.RunForecast()
-
-   ' Batch processing
-   BatchProcessing.ProcessAllComponents(12, 12, "additive", False)
+   ForecastGUI.Show
+   ' or
+   BatchForecastGUI.Show
    ```
 
-### Optional: With GUI
+**That's it!** The UserForms are pre-built with all controls and code. No manual configuration needed.
 
-If you want the graphical interface:
-- Also import `ForecastGUI.frm` and `BatchForecastGUI.frm`
-- See [USERFORM_DOCUMENTATION.md](USERFORM_DOCUMENTATION.md) for details
-- Launch with `ForecastGUI.Show`
+> **Tip:** When importing .frm files, Excel automatically includes the .frx files (binary data). Just select the .frm file.
 
-**UserForms are completely optional** - the tool works perfectly without them!
+### Alternative: VBA Functions Only (No GUI)
+
+If you prefer to skip the GUI and use VBA functions directly:
+- Only import the 5 `.bas` files (skip the .frm files)
+- Use functions like `MainModule.RunForecast()` or `BatchProcessing.ProcessAllComponents()`
+- See [SIMPLE_SETUP.md](SIMPLE_SETUP.md) for details
 
 ## 📋 Requirements
 
