@@ -621,8 +621,12 @@ Private Sub AddBatchCodeToUserForm(VBComp As Object)
     code = code & "    If Trim(txtFilePath.Text) = """" Then MsgBox ""Select CSV file"", vbExclamation: Exit Sub" & vbCrLf
     code = code & "    If Not IsNumeric(txtFrequency.Text) Then MsgBox ""Invalid frequency"", vbExclamation: Exit Sub" & vbCrLf
     code = code & "    If Not IsNumeric(txtHorizon.Text) Then MsgBox ""Invalid horizon"", vbExclamation: Exit Sub" & vbCrLf
-    code = code & "    lblStatus.Caption = ""Processing batch forecast..."": DoEvents" & vbCrLf
-    code = code & "    Call BatchProcessing.ProcessMultiComponentCSV(txtFilePath.Text, CInt(txtFrequency.Text), CInt(txtHorizon.Text), LCase(cboSeasonalType.Text), False)" & vbCrLf
+    code = code & "    lblStatus.Caption = ""Loading data..."": DoEvents" & vbCrLf
+    code = code & "    If Not BatchProcessing.LoadMultiComponentCSV(txtFilePath.Text, ""WIDE"") Then" & vbCrLf
+    code = code & "        MsgBox ""Failed to load data"", vbCritical: Exit Sub" & vbCrLf
+    code = code & "    End If" & vbCrLf
+    code = code & "    lblStatus.Caption = ""Processing all components..."": DoEvents" & vbCrLf
+    code = code & "    Call BatchProcessing.ProcessAllComponents(CLng(txtFrequency.Text), CLng(txtHorizon.Text), LCase(cboSeasonalType.Text), False)" & vbCrLf
     code = code & "    lblStatus.Caption = ""Batch processing complete!"": lblStatus.ForeColor = RGB(0,128,0)" & vbCrLf
     code = code & "    MsgBox ""Batch processing complete! Check BatchSummary sheet."", vbInformation" & vbCrLf
     code = code & "    Exit Sub" & vbCrLf
