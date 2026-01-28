@@ -25,45 +25,33 @@ This is a complete Excel/VBA implementation of the Time Series Forecasting syste
 - 🔧 **Customizable** - Modify charts, add features
 - 💼 **Business Ready** - Professional output for reports
 
-## 🚀 Quick Start - GUI Created Automatically!
+## 🚀 Quick Start - Simple and Working!
 
-### Simple 3-Step Setup
+### 3-Step Setup
 
-1. **Create a new Excel workbook**
-2. **Save as** `.xlsm` (Excel Macro-Enabled Workbook)
-3. **Open VBA Editor** (Press `Alt+F11`)
-4. **Import VBA modules** from `VBA_Modules/` folder:
+1. **Create a new Excel workbook** and save as `.xlsm`
+2. **Open VBA Editor** (Press `Alt+F11`)
+3. **Import these 4 VBA modules** from `VBA_Modules/` folder:
    - Go to `File` → `Import File...`
-   - Import these **5 files**:
+   - Import:
      - `TimeSeriesAnalysis.bas`
      - `ChartUtilities.bas`
      - `MainModule.bas`
      - `AutoSetup.bas`
-     - `BatchProcessing.bas`
-5. **Run Setup**:
+4. **Run Setup** (in Immediate Window - Ctrl+G):
    ```vba
    AutoSetup.CreateCompleteApplication
    ```
-   **This automatically creates the GUI UserForm with all controls!**
 
-6. **Done!** Launch the GUI:
+**This automatically creates the GUI with all controls!**
+
+5. **Launch the tool**:
    ```vba
    ForecastGUI.Show
    ```
-   Or click the "Launch Forecasting Tool" button on the Dashboard.
+   Or click "Launch Forecasting Tool" on the Dashboard
 
-**That's it!** The setup process automatically creates a complete UserForm with all buttons, textboxes, and controls. No manual setup required!
-
-### Alternative: VBA Functions Only (No GUI)
-
-You can also use VBA functions directly without the GUI:
-```vba
-' Single component forecast
-MainModule.RunForecast()
-
-' Batch processing (50+ components)
-BatchProcessing.ProcessAllComponents(12, 12, "additive", False)
-```
+**That's it!** No .frm files to import, no compile errors, GUI is created automatically.
 
 ## 📋 Requirements
 

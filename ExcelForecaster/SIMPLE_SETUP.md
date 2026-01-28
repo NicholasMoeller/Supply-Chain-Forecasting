@@ -13,12 +13,11 @@
 ### 2. Import VBA Modules
 - Press `Alt+F11` to open VBA Editor
 - Go to `File` → `Import File...`
-- Import these **5 files** from the `VBA_Modules/` folder:
+- Import these **4 files** from the `VBA_Modules/` folder:
   1. `TimeSeriesAnalysis.bas`
   2. `ChartUtilities.bas`
   3. `MainModule.bas`
   4. `AutoSetup.bas`
-  5. `BatchProcessing.bas`
 
 ### 3. Run Setup
 In VBA Editor, press `Ctrl+G` (Immediate Window) and type:
@@ -76,11 +75,6 @@ tsData.Frequency = 12
 result = TimeSeriesAnalysis.HoltWinters(tsData, 12, "additive")
 ```
 
-**Batch Processing (50+ components):**
-```vba
-BatchProcessing.ProcessAllComponents(12, 12, "additive", False)
-```
-
 All results are written to Excel worksheets automatically!
 
 ---
@@ -95,12 +89,6 @@ All results are written to Excel worksheets automatically!
 - **Confidence Intervals** - 95% prediction bounds
 - **Diagnostic Charts** - Residuals, ACF, histograms, Q-Q plots
 
-### Batch Processing
-- Process **50-60+ components** simultaneously
-- Wide or long data format support
-- Summary statistics and rankings
-- Automatic chart generation
-- Export all results to CSV
 
 ---
 
@@ -127,27 +115,26 @@ MainModule.ExportResults "C:\path\to\results.csv", tsData, sesResult, hwResult
 
 ---
 
-## Files You Need (Import These 5)
+## Files You Need (Import These 4)
 
 **VBA Modules (.bas):**
 - `TimeSeriesAnalysis.bas` - Core forecasting algorithms
 - `ChartUtilities.bas` - Chart generation
 - `MainModule.bas` - Main functions and entry points
-- `AutoSetup.bas` - Setup helper
-- `BatchProcessing.bas` - Multi-component processing
+- `AutoSetup.bas` - Automatic GUI creation and setup
 
-> **That's all you need!** Just 5 .bas files - no GUI, no UserForms, no manual setup required.
+> **That's all you need!** Just 4 .bas files - GUI is created automatically!
 
 ---
 
 ## Troubleshooting
 
 **"User-defined type not defined"**
-- Import ALL 5 .bas files
+- Import ALL 4 .bas files
 - Make sure TimeSeriesAnalysis.bas is loaded first
 
 **"Sub or Function not defined"**
-- Verify all 5 modules are imported
+- Verify all 4 modules are imported
 - Check VBA Project Explorer to confirm modules are listed
 
 **"Compile error"**
@@ -165,11 +152,11 @@ MainModule.ExportResults "C:\path\to\results.csv", tsData, sesResult, hwResult
 
 ## That's All!
 
-Just import 5 .bas files, run AutoSetup, and start forecasting!
+Just import 4 .bas files, run AutoSetup, and you get a working GUI!
 
-✓ **No GUI needed**
-✓ **No manual setup**
-✓ **No external dependencies**
+✓ **GUI created automatically**
+✓ **No .frm files to import**
+✓ **No compile errors**
 ✓ **100% VBA**
 
-Everything works through simple VBA function calls! 🎉
+Back to the simple, working version! 🎉
