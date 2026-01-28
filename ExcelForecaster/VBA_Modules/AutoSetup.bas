@@ -27,9 +27,10 @@ Public Sub CreateCompleteApplication()
     Application.ScreenUpdating = False
     Application.DisplayAlerts = False
 
-    ' Step 1: Create UserForm
-    MsgBox "Step 1/3: Creating UserForm and controls...", vbInformation, "Setup Progress"
+    ' Step 1: Create UserForms
+    MsgBox "Step 1/3: Creating UserForms (ForecastGUI + BatchForecastGUI)...", vbInformation, "Setup Progress"
     Call CreateForecastGUI
+    Call CreateBatchForecastGUI
 
     ' Step 2: Setup Dashboard
     MsgBox "Step 2/3: Creating Dashboard...", vbInformation, "Setup Progress"
@@ -43,12 +44,16 @@ Public Sub CreateCompleteApplication()
 
     ' Success message
     MsgBox "✓ Setup Complete!" & vbCrLf & vbCrLf & _
-           "Your Time Series Forecasting Tool is ready to use!" & vbCrLf & vbCrLf & _
+           "Your Time Series Forecasting Tool is ready!" & vbCrLf & vbCrLf & _
+           "TWO GUIs Created:" & vbCrLf & _
+           "• ForecastGUI - Single component analysis" & vbCrLf & _
+           "• BatchForecastGUI - Multi-component batch processing" & vbCrLf & vbCrLf & _
            "Next steps:" & vbCrLf & _
            "1. Save this workbook as .xlsm" & vbCrLf & _
-           "2. Click 'Launch Forecasting Tool' on the Dashboard" & vbCrLf & _
-           "3. Load your CSV data and start forecasting!" & vbCrLf & vbCrLf & _
-           "Test the installation by running: TestInstallation", _
+           "2. Launch GUIs:" & vbCrLf & _
+           "   - ForecastGUI.Show (single)" & vbCrLf & _
+           "   - BatchForecastGUI.Show (batch)" & vbCrLf & vbCrLf & _
+           "Or click Dashboard buttons!", _
            vbInformation, "Setup Complete!"
 
     ' Activate Dashboard
@@ -106,6 +111,47 @@ Private Sub CreateForecastGUI()
 
 ErrorHandler:
     Err.Raise Err.Number, "CreateForecastGUI", Err.Description
+End Sub
+
+Private Sub CreateBatchForecastGUI()
+    On Error GoTo ErrorHandler
+
+    Dim VBProj As Object
+    Dim VBComp As Object
+    Dim CodeMod As Object
+
+    ' Access VBA Project
+    Set VBProj = ThisWorkbook.VBProject
+
+    ' Check if BatchForecastGUI already exists and remove it
+    On Error Resume Next
+    Set VBComp = VBProj.VBComponents("BatchForecastGUI")
+    If Not VBComp Is Nothing Then
+        VBProj.VBComponents.Remove VBComp
+    End If
+    On Error GoTo ErrorHandler
+
+    ' Create new UserForm
+    Set VBComp = VBProj.VBComponents.Add(3) ' 3 = vbext_ct_MSForm
+    VBComp.Name = "BatchForecastGUI"
+
+    ' Set form properties
+    With VBComp.Properties
+        .Item("Caption").Value = "Batch Forecasting Tool"
+        .Item("Width").Value = 540
+        .Item("Height").Value = 350
+    End With
+
+    ' Add controls
+    Call AddBatchControlsToForm(VBComp)
+
+    ' Add code to UserForm
+    Call AddBatchCodeToUserForm(VBComp)
+
+    Exit Sub
+
+ErrorHandler:
+    Err.Raise Err.Number, "CreateBatchForecastGUI", Err.Description
 End Sub
 
 Private Sub AddControlsToForm(VBComp As Object)
@@ -397,6 +443,199 @@ Private Function GetUserFormCode() As String
 
     GetUserFormCode = code
 End Function
+
+Private Sub AddBatchControlsToForm(VBComp As Object)
+    Dim frm As Object
+    Dim ctrl As Object
+
+    Set frm = VBComp.Designer
+
+    ' Title Label
+    Set ctrl = frm.Controls.Add("Forms.Label.1", "lblTitle", True)
+    With ctrl
+        .Caption = "Batch Forecasting Tool - Multi-Component Analysis"
+        .Left = 20
+        .Top = 10
+        .Width = 480
+        .Height = 20
+        .Font.Size = 12
+        .Font.Bold = True
+    End With
+
+    ' File Path Label
+    Set ctrl = frm.Controls.Add("Forms.Label.1", , True)
+    With ctrl
+        .Caption = "CSV File Path (multiple components):"
+        .Left = 20
+        .Top = 50
+        .Width = 200
+    End With
+
+    ' File Path TextBox
+    Set ctrl = frm.Controls.Add("Forms.TextBox.1", "txtFilePath", True)
+    With ctrl
+        .Left = 20
+        .Top = 70
+        .Width = 380
+        .Height = 20
+    End With
+
+    ' Browse Button
+    Set ctrl = frm.Controls.Add("Forms.CommandButton.1", "btnBrowse", True)
+    With ctrl
+        .Caption = "Browse..."
+        .Left = 410
+        .Top = 67
+        .Width = 80
+        .Height = 25
+    End With
+
+    ' Frequency Label
+    Set ctrl = frm.Controls.Add("Forms.Label.1", , True)
+    With ctrl
+        .Caption = "Frequency:"
+        .Left = 20
+        .Top = 110
+        .Width = 80
+    End With
+
+    ' Frequency TextBox
+    Set ctrl = frm.Controls.Add("Forms.TextBox.1", "txtFrequency", True)
+    With ctrl
+        .Text = "12"
+        .Left = 20
+        .Top = 130
+        .Width = 60
+        .Height = 20
+    End With
+
+    ' Horizon Label
+    Set ctrl = frm.Controls.Add("Forms.Label.1", , True)
+    With ctrl
+        .Caption = "Forecast Horizon:"
+        .Left = 100
+        .Top = 110
+        .Width = 100
+    End With
+
+    ' Horizon TextBox
+    Set ctrl = frm.Controls.Add("Forms.TextBox.1", "txtHorizon", True)
+    With ctrl
+        .Text = "12"
+        .Left = 100
+        .Top = 130
+        .Width = 60
+        .Height = 20
+    End With
+
+    ' Seasonal Type Label
+    Set ctrl = frm.Controls.Add("Forms.Label.1", , True)
+    With ctrl
+        .Caption = "Seasonal Type:"
+        .Left = 180
+        .Top = 110
+        .Width = 100
+    End With
+
+    ' Seasonal Type ComboBox
+    Set ctrl = frm.Controls.Add("Forms.ComboBox.1", "cboSeasonalType", True)
+    With ctrl
+        .Left = 180
+        .Top = 130
+        .Width = 120
+        .Height = 20
+    End With
+
+    ' Process All Button
+    Set ctrl = frm.Controls.Add("Forms.CommandButton.1", "btnProcessAll", True)
+    With ctrl
+        .Caption = "Process All Components"
+        .Left = 20
+        .Top = 180
+        .Width = 200
+        .Height = 40
+        .Font.Size = 11
+        .Font.Bold = True
+    End With
+
+    ' Close Button
+    Set ctrl = frm.Controls.Add("Forms.CommandButton.1", "btnClose", True)
+    With ctrl
+        .Caption = "Close"
+        .Left = 400
+        .Top = 180
+        .Width = 90
+        .Height = 40
+    End With
+
+    ' Status Label
+    Set ctrl = frm.Controls.Add("Forms.Label.1", "lblStatus", True)
+    With ctrl
+        .Caption = "Ready - Select CSV file with multiple component columns"
+        .Left = 20
+        .Top = 240
+        .Width = 470
+        .Height = 40
+        .ForeColor = RGB(0, 0, 255)
+        .BorderStyle = 1
+        .BackColor = RGB(240, 240, 240)
+    End With
+End Sub
+
+Private Sub AddBatchCodeToUserForm(VBComp As Object)
+    Dim CodeMod As Object
+    Dim LineNum As Long
+    Dim code As String
+
+    Set CodeMod = VBComp.CodeModule
+    LineNum = CodeMod.CountOfLines + 1
+
+    code = "Option Explicit" & vbCrLf & vbCrLf
+
+    ' Initialize
+    code = code & "Private Sub UserForm_Initialize()" & vbCrLf
+    code = code & "    txtFrequency.Text = ""12""" & vbCrLf
+    code = code & "    txtHorizon.Text = ""12""" & vbCrLf
+    code = code & "    cboSeasonalType.Clear" & vbCrLf
+    code = code & "    cboSeasonalType.AddItem ""Additive""" & vbCrLf
+    code = code & "    cboSeasonalType.AddItem ""Multiplicative""" & vbCrLf
+    code = code & "    cboSeasonalType.ListIndex = 0" & vbCrLf
+    code = code & "End Sub" & vbCrLf & vbCrLf
+
+    ' Browse button
+    code = code & "Private Sub btnBrowse_Click()" & vbCrLf
+    code = code & "    Dim fd As FileDialog" & vbCrLf
+    code = code & "    Set fd = Application.FileDialog(msoFileDialogFilePicker)" & vbCrLf
+    code = code & "    With fd" & vbCrLf
+    code = code & "        .Title = ""Select CSV File""" & vbCrLf
+    code = code & "        .Filters.Clear" & vbCrLf
+    code = code & "        .Filters.Add ""CSV Files"", ""*.csv""" & vbCrLf
+    code = code & "        .AllowMultiSelect = False" & vbCrLf
+    code = code & "        If .Show = -1 Then txtFilePath.Text = .SelectedItems(1)" & vbCrLf
+    code = code & "    End With" & vbCrLf
+    code = code & "End Sub" & vbCrLf & vbCrLf
+
+    ' Process All button
+    code = code & "Private Sub btnProcessAll_Click()" & vbCrLf
+    code = code & "    On Error GoTo ErrHandler" & vbCrLf
+    code = code & "    If Trim(txtFilePath.Text) = """" Then MsgBox ""Select CSV file"", vbExclamation: Exit Sub" & vbCrLf
+    code = code & "    If Not IsNumeric(txtFrequency.Text) Then MsgBox ""Invalid frequency"", vbExclamation: Exit Sub" & vbCrLf
+    code = code & "    If Not IsNumeric(txtHorizon.Text) Then MsgBox ""Invalid horizon"", vbExclamation: Exit Sub" & vbCrLf
+    code = code & "    lblStatus.Caption = ""Processing batch forecast..."": DoEvents" & vbCrLf
+    code = code & "    Call BatchProcessing.ProcessMultiComponentCSV(txtFilePath.Text, CInt(txtFrequency.Text), CInt(txtHorizon.Text), LCase(cboSeasonalType.Text), False)" & vbCrLf
+    code = code & "    lblStatus.Caption = ""Batch processing complete!"": lblStatus.ForeColor = RGB(0,128,0)" & vbCrLf
+    code = code & "    MsgBox ""Batch processing complete! Check BatchSummary sheet."", vbInformation" & vbCrLf
+    code = code & "    Exit Sub" & vbCrLf
+    code = code & "ErrHandler: MsgBox Err.Description, vbCritical: lblStatus.Caption = ""Error""" & vbCrLf
+    code = code & "End Sub" & vbCrLf & vbCrLf
+
+    ' Close button
+    code = code & "Private Sub btnClose_Click()" & vbCrLf
+    code = code & "    Unload Me" & vbCrLf
+    code = code & "End Sub" & vbCrLf
+
+    CodeMod.InsertLines LineNum, code
+End Sub
 
 ' Quick setup verification
 Public Sub VerifySetup()

@@ -25,33 +25,35 @@ This is a complete Excel/VBA implementation of the Time Series Forecasting syste
 - 🔧 **Customizable** - Modify charts, add features
 - 💼 **Business Ready** - Professional output for reports
 
-## 🚀 Quick Start - Simple and Working!
+## 🚀 Quick Start - Complete with Batch Processing!
 
 ### 3-Step Setup
 
 1. **Create a new Excel workbook** and save as `.xlsm`
 2. **Open VBA Editor** (Press `Alt+F11`)
-3. **Import these 4 VBA modules** from `VBA_Modules/` folder:
+3. **Import these 5 VBA modules** from `VBA_Modules/` folder:
    - Go to `File` → `Import File...`
    - Import:
      - `TimeSeriesAnalysis.bas`
      - `ChartUtilities.bas`
      - `MainModule.bas`
      - `AutoSetup.bas`
+     - `BatchProcessing.bas`
 4. **Run Setup** (in Immediate Window - Ctrl+G):
    ```vba
    AutoSetup.CreateCompleteApplication
    ```
 
-**This automatically creates the GUI with all controls!**
+**This automatically creates BOTH GUIs with all controls!**
 
-5. **Launch the tool**:
+5. **Launch the tools**:
    ```vba
-   ForecastGUI.Show
+   ForecastGUI.Show          ' Single component analysis
+   BatchForecastGUI.Show     ' Batch processing (50+ components)
    ```
-   Or click "Launch Forecasting Tool" on the Dashboard
+   Or use the Dashboard buttons
 
-**That's it!** No .frm files to import, no compile errors, GUI is created automatically.
+**That's it!** No .frm files, no compile errors, both GUIs created automatically.
 
 ## 📋 Requirements
 
