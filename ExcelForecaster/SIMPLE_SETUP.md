@@ -1,8 +1,8 @@
-# Simple Setup - Complete with GUI
+# Simple Setup - VBA Functions Only
 
-## The Easiest Way to Use This Tool (With Full GUI)
+## The Easiest Way to Use This Tool
 
-**No manual configuration needed!** Just import all the files and the GUI works automatically.
+**No GUI setup needed!** Just import the VBA modules and use the functions directly.
 
 ## 3-Step Setup
 
@@ -10,23 +10,15 @@
 - Create a new Excel file
 - Save as `.xlsm` (Macro-Enabled Workbook)
 
-### 2. Import ALL Files
+### 2. Import VBA Modules
 - Press `Alt+F11` to open VBA Editor
 - Go to `File` → `Import File...`
-- Import **ALL 7 files** from the `VBA_Modules/` folder:
-
-  **VBA Modules (.bas files):**
+- Import these **5 files** from the `VBA_Modules/` folder:
   1. `TimeSeriesAnalysis.bas`
   2. `ChartUtilities.bas`
   3. `MainModule.bas`
   4. `AutoSetup.bas`
   5. `BatchProcessing.bas`
-
-  **UserForms (.frm files) - GUI Interface:**
-  6. `ForecastGUI.frm` - Single component GUI
-  7. `BatchForecastGUI.frm` - Batch processing GUI
-
-> **Note:** When you import the .frm files, Excel automatically imports both the .frm and .frx files (the form design and binary data). Just select the .frm file and it brings in everything needed.
 
 ### 3. Run Setup
 In VBA Editor, press `Ctrl+G` (Immediate Window) and type:
@@ -34,79 +26,62 @@ In VBA Editor, press `Ctrl+G` (Immediate Window) and type:
 AutoSetup.CreateCompleteApplication
 ```
 
-**That's it! Your GUI is ready to use.**
+**That's it! You're ready to forecast.**
 
 ---
 
 ## How to Use
 
-### Using the GUI (Easiest)
+### VBA Functions (Recommended)
 
 **Single Component Forecasting:**
 ```vba
-ForecastGUI.Show
+' Quick method
+MainModule.RunForecast()
+
+' Or call functions directly
+Dim tsData As TimeSeriesData
+Dim result As ForecastResult
+
+' Your data
+tsData.Values = Array(112, 118, 132, 140, ...)
+tsData.Frequency = 12
+
+' Run forecast
+result = TimeSeriesAnalysis.HoltWinters(tsData, 12, "additive")
 ```
-Or click the "Launch Forecasting Tool" button on the Dashboard.
 
 **Batch Processing (50+ components):**
 ```vba
-BatchForecastGUI.Show
-```
-
-The GUI handles everything - file browsing, data loading, analysis, charts, and export!
-
-### Using VBA Functions Directly (Advanced)
-
-You can also call functions directly without the GUI:
-
-```vba
-' Single Component
-MainModule.RunForecast()
-
-' Batch Processing
 BatchProcessing.ProcessAllComponents(12, 12, "additive", False)
 ```
+
+All results are written to Excel worksheets automatically!
 
 ---
 
 ## What You Get
 
-### ForecastGUI - Single Component Tool
-- Browse and load CSV files
-- Configure parameters (frequency, horizon, seasonal type)
-- Run analysis with one click
-- View charts and diagnostics
-- Export results to CSV
-- Real-time status updates
+### Core Forecasting Capabilities
+- **Simple Exponential Smoothing** - For non-seasonal data
+- **Holt-Winters** - For seasonal data with trends (additive/multiplicative)
+- **Time Series Decomposition** - Trend, seasonal, random components
+- **Accuracy Metrics** - MAPE, MAE, RMSE
+- **Confidence Intervals** - 95% prediction bounds
+- **Diagnostic Charts** - Residuals, ACF, histograms, Q-Q plots
 
-### BatchForecastGUI - Multi-Component Tool
-- Process 50-60+ components at once
+### Batch Processing
+- Process **50-60+ components** simultaneously
 - Wide or long data format support
-- Progress bar showing current component
-- Quick mode or full diagnostics
 - Summary statistics and rankings
-- Batch export capabilities
-
-Both GUIs are **fully functional** - no manual control creation or configuration needed!
+- Automatic chart generation
+- Export all results to CSV
 
 ---
 
 ## Quick Reference
 
-### Launch Commands
-
-```vba
-' Single component GUI
-ForecastGUI.Show
-
-' Batch processing GUI
-BatchForecastGUI.Show
-
-' Or use the Dashboard button (created by AutoSetup)
-' Click "Launch Forecasting Tool"
-```
-
-### VBA Functions (if you prefer code)
+### Main Functions
 
 ```vba
 ' Single Exponential Smoothing
@@ -127,20 +102,16 @@ MainModule.ExportResults "C:\path\to\results.csv", tsData, sesResult, hwResult
 
 ---
 
-## Files You Need (Import All 7)
+## Files You Need (Import These 5)
 
-**VBA Modules (.bas) - Required:**
-- `TimeSeriesAnalysis.bas` - Core algorithms
+**VBA Modules (.bas):**
+- `TimeSeriesAnalysis.bas` - Core forecasting algorithms
 - `ChartUtilities.bas` - Chart generation
-- `MainModule.bas` - Main functions
+- `MainModule.bas` - Main functions and entry points
 - `AutoSetup.bas` - Setup helper
 - `BatchProcessing.bas` - Multi-component processing
 
-**UserForms (.frm) - GUI Interface:**
-- `ForecastGUI.frm` - Single component interface (pre-built, ready to use)
-- `BatchForecastGUI.frm` - Batch processing interface (pre-built, ready to use)
-
-> **Important:** The .frm files are **complete** UserForms with all controls and code already included. No manual setup required - just import and use!
+> **That's all you need!** Just 5 .bas files - no GUI, no UserForms, no manual setup required.
 
 ---
 
@@ -148,26 +119,32 @@ MainModule.ExportResults "C:\path\to\results.csv", tsData, sesResult, hwResult
 
 **"User-defined type not defined"**
 - Import ALL 5 .bas files
-- Make sure TimeSeriesAnalysis.bas is loaded
+- Make sure TimeSeriesAnalysis.bas is loaded first
 
 **"Sub or Function not defined"**
-- Check which module contains the function
-- Verify all modules are imported
-
-**UserForm doesn't appear**
-- Make sure you imported both .frm files
-- Check VBA Project Explorer - you should see ForecastGUI and BatchForecastGUI under "Forms"
-- If missing, re-import the .frm files
+- Verify all 5 modules are imported
+- Check VBA Project Explorer to confirm modules are listed
 
 **"Compile error"**
 - Close and reopen Excel
-- Re-import modules
+- Re-import all modules
+- Enable macros (File → Options → Trust Center)
 - Check Excel version (2010+ required)
+
+**Function doesn't work**
+- Make sure you ran `AutoSetup.CreateCompleteApplication` first
+- Check that Dashboard worksheet was created
+- Verify macro security allows VBA execution
 
 ---
 
 ## That's All!
 
-Just import all 7 files, run AutoSetup, and your complete tool with GUI is ready!
+Just import 5 .bas files, run AutoSetup, and start forecasting!
 
-No manual form creation, no control configuration - everything works automatically! 🎉
+✓ **No GUI needed**
+✓ **No manual setup**
+✓ **No external dependencies**
+✓ **100% VBA**
+
+Everything works through simple VBA function calls! 🎉

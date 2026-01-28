@@ -25,44 +25,44 @@ This is a complete Excel/VBA implementation of the Time Series Forecasting syste
 - 🔧 **Customizable** - Modify charts, add features
 - 💼 **Business Ready** - Professional output for reports
 
-## 🚀 Quick Start (Complete Tool with GUI)
+## 🚀 Quick Start (Recommended - VBA Functions Only)
 
-### 3-Step Setup - Everything Included!
+### Simple 3-Step Setup
 
 1. **Create a new Excel workbook**
 2. **Save as** `.xlsm` (Excel Macro-Enabled Workbook)
 3. **Open VBA Editor** (Press `Alt+F11`)
-4. **Import ALL files** from `VBA_Modules/` folder:
+4. **Import VBA modules** from `VBA_Modules/` folder:
    - Go to `File` → `Import File...`
-   - Import all **7 files**:
+   - Import these **5 files**:
      - `TimeSeriesAnalysis.bas`
      - `ChartUtilities.bas`
      - `MainModule.bas`
      - `AutoSetup.bas`
      - `BatchProcessing.bas`
-     - `ForecastGUI.frm` ⭐ (GUI for single component)
-     - `BatchForecastGUI.frm` ⭐ (GUI for batch processing)
 5. **Run Setup**:
    ```vba
    AutoSetup.CreateCompleteApplication
    ```
-6. **Done!** Launch the GUI:
+6. **Done!** Use VBA functions:
    ```vba
-   ForecastGUI.Show
-   ' or
-   BatchForecastGUI.Show
+   ' Single component forecast
+   MainModule.RunForecast()
+
+   ' Batch processing (50+ components)
+   BatchProcessing.ProcessAllComponents(12, 12, "additive", False)
    ```
 
-**That's it!** The UserForms are pre-built with all controls and code. No manual configuration needed.
+**That's it!** No GUI needed - all functionality available through VBA functions.
 
-> **Tip:** When importing .frm files, Excel automatically includes the .frx files (binary data). Just select the .frm file.
+### Alternative: With GUI (Requires Manual Setup)
 
-### Alternative: VBA Functions Only (No GUI)
+If you want a graphical interface:
+- Import `ForecastGUI.frm` and `BatchForecastGUI.frm` (contains code structure)
+- **Manually add controls** to the UserForms (see [Detailed Setup Instructions](#detailed-setup-instructions) below)
+- This requires creating textboxes, buttons, labels, etc. in the VBA editor
 
-If you prefer to skip the GUI and use VBA functions directly:
-- Only import the 5 `.bas` files (skip the .frm files)
-- Use functions like `MainModule.RunForecast()` or `BatchProcessing.ProcessAllComponents()`
-- See [SIMPLE_SETUP.md](SIMPLE_SETUP.md) for details
+> **Note:** The .frm files contain the VBA code but not the visual controls. Controls must be added manually using the VBA editor's toolbox.
 
 ## 📋 Requirements
 
