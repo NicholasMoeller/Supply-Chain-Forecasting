@@ -26,40 +26,25 @@ Public Sub CreateCompleteApplication()
     Application.ScreenUpdating = False
     Application.DisplayAlerts = False
 
-    ' Step 1: Setup Dashboard
-    MsgBox "Step 1/1: Creating Dashboard...", vbInformation, "Setup Progress"
+    ' Step 1: Create UserForm with controls
+    MsgBox "Step 1/2: Creating UserForm with GUI...", vbInformation, "Setup Progress"
+    Call CreateForecastGUI
+
+    ' Step 2: Setup Dashboard
+    MsgBox "Step 2/2: Creating Dashboard...", vbInformation, "Setup Progress"
     Call MainModule.SetupWorkbook
 
     Application.ScreenUpdating = True
     Application.DisplayAlerts = True
 
     ' Success message
-    Dim guiStatus As String
-    guiStatus = ""
-
-    ' Check if UserForms are available (optional)
-    On Error Resume Next
-    Dim hasGUI As Boolean
-    hasGUI = False
-    Dim vbComp As Object
-    Set vbComp = ThisWorkbook.VBProject.VBComponents("ForecastGUI")
-    If Not vbComp Is Nothing Then hasGUI = True
-    On Error GoTo 0
-
-    If hasGUI Then
-        guiStatus = vbCrLf & "2. Click 'Launch Forecasting Tool' on the Dashboard (GUI)" & vbCrLf & _
-                    "   OR use VBA functions directly"
-    Else
-        guiStatus = vbCrLf & "2. Use VBA functions to run forecasts:" & vbCrLf & _
-                    "   - MainModule.RunForecast()" & vbCrLf & _
-                    "   - BatchProcessing.ProcessAllComponents()"
-    End If
-
     MsgBox "✓ Setup Complete!" & vbCrLf & vbCrLf & _
-           "Your Time Series Forecasting Tool is ready!" & vbCrLf & vbCrLf & _
+           "Your Time Series Forecasting Tool with GUI is ready!" & vbCrLf & vbCrLf & _
            "Next steps:" & vbCrLf & _
-           "1. Save this workbook as .xlsm" & guiStatus & vbCrLf & vbCrLf & _
-           "All VBA modules are imported and ready to use.", _
+           "1. Save this workbook as .xlsm" & vbCrLf & _
+           "2. Click 'Launch Forecasting Tool' on the Dashboard" & vbCrLf & _
+           "3. Or run: ForecastGUI.Show" & vbCrLf & vbCrLf & _
+           "The GUI has been automatically created with all controls!", _
            vbInformation, "Setup Complete!"
 
     ' Activate Dashboard
@@ -75,6 +60,46 @@ ErrorHandler:
     MsgBox "Error during setup: " & Err.Description & vbCrLf & vbCrLf & _
            "You may need to run the setup again.", _
            vbCritical, "Setup Error"
+End Sub
+
+Private Sub CreateForecastGUI()
+    On Error GoTo ErrorHandler
+
+    Dim VBProj As Object
+    Dim VBComp As Object
+
+    ' Access VBA Project
+    Set VBProj = ThisWorkbook.VBProject
+
+    ' Check if ForecastGUI already exists and remove it
+    On Error Resume Next
+    Set VBComp = VBProj.VBComponents("ForecastGUI")
+    If Not VBComp Is Nothing Then
+        VBProj.VBComponents.Remove VBComp
+    End If
+    On Error GoTo ErrorHandler
+
+    ' Create new UserForm
+    Set VBComp = VBProj.VBComponents.Add(3) ' 3 = vbext_ct_MSForm
+    VBComp.Name = "ForecastGUI"
+
+    ' Set form properties
+    With VBComp.Properties
+        .Item("Caption").Value = "Time Series Forecasting Tool"
+        .Item("Width").Value = 540
+        .Item("Height").Value = 420
+    End With
+
+    ' Add controls
+    Call AddControlsToForm(VBComp)
+
+    ' Add code to UserForm
+    Call AddCodeToUserForm(VBComp)
+
+    Exit Sub
+
+ErrorHandler:
+    Err.Raise Err.Number, "CreateForecastGUI", Err.Description
 End Sub
 
 Private Sub CheckUserForms_Optional()
@@ -116,12 +141,7 @@ Private Sub CheckUserForms_Optional()
     On Error GoTo 0
 End Sub
 
-' ============================================================================
-' LEGACY FUNCTIONS - NO LONGER USED
-' UserForms are now pre-created as .frm files
-' ============================================================================
-
-Private Sub AddControlsToForm_LEGACY(VBComp As Object)
+Private Sub AddControlsToForm(VBComp As Object)
     Dim frm As Object
     Dim ctrl As Object
 
@@ -313,7 +333,7 @@ Private Sub AddControlsToForm_LEGACY(VBComp As Object)
 
 End Sub
 
-Private Sub AddCodeToUserForm_LEGACY(VBComp As Object)
+Private Sub AddCodeToUserForm(VBComp As Object)
     Dim CodeMod As Object
     Dim LineNum As Long
     Dim code As String
@@ -327,7 +347,7 @@ Private Sub AddCodeToUserForm_LEGACY(VBComp As Object)
 
 End Sub
 
-Private Function GetUserFormCode_LEGACY() As String
+Private Function GetUserFormCode() As String
     Dim code As String
 
     code = "Option Explicit" & vbCrLf & vbCrLf
