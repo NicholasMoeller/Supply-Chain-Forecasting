@@ -1,8 +1,8 @@
-# Simple Setup - VBA Functions Only
+# Simple Setup - GUI Created Automatically!
 
 ## The Easiest Way to Use This Tool
 
-**No GUI setup needed!** Just import the VBA modules and use the functions directly.
+**GUI is automatically created!** Just import modules and run setup - the UserForm is built for you with all controls.
 
 ## 3-Step Setup
 
@@ -26,13 +26,38 @@ In VBA Editor, press `Ctrl+G` (Immediate Window) and type:
 AutoSetup.CreateCompleteApplication
 ```
 
-**That's it! You're ready to forecast.**
+**This automatically creates the ForecastGUI UserForm with ALL controls!**
+
+The setup process programmatically builds the complete GUI interface with:
+- All buttons (Browse, Load Data, Analyze, View Charts, Export, Close)
+- All textboxes (File Path, Column Name, Frequency, Horizon)
+- Dropdown for Seasonal Type
+- Status label with color coding
+- All event handlers and functionality
+
+**That's it! Your GUI is ready to use.**
 
 ---
 
 ## How to Use
 
-### VBA Functions (Recommended)
+### Using the GUI (Easiest!)
+
+**Launch the automatically-created GUI:**
+```vba
+ForecastGUI.Show
+```
+
+Or click the **"Launch Forecasting Tool"** button on the Dashboard worksheet.
+
+The GUI provides:
+- File browser for CSV files
+- Parameter configuration (frequency, horizon, seasonal type)
+- One-click analysis
+- Chart viewing
+- Results export
+
+### Using VBA Functions (Advanced)
 
 **Single Component Forecasting:**
 ```vba

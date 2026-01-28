@@ -25,7 +25,7 @@ This is a complete Excel/VBA implementation of the Time Series Forecasting syste
 - 🔧 **Customizable** - Modify charts, add features
 - 💼 **Business Ready** - Professional output for reports
 
-## 🚀 Quick Start (Recommended - VBA Functions Only)
+## 🚀 Quick Start - GUI Created Automatically!
 
 ### Simple 3-Step Setup
 
@@ -44,25 +44,26 @@ This is a complete Excel/VBA implementation of the Time Series Forecasting syste
    ```vba
    AutoSetup.CreateCompleteApplication
    ```
-6. **Done!** Use VBA functions:
+   **This automatically creates the GUI UserForm with all controls!**
+
+6. **Done!** Launch the GUI:
    ```vba
-   ' Single component forecast
-   MainModule.RunForecast()
-
-   ' Batch processing (50+ components)
-   BatchProcessing.ProcessAllComponents(12, 12, "additive", False)
+   ForecastGUI.Show
    ```
+   Or click the "Launch Forecasting Tool" button on the Dashboard.
 
-**That's it!** No GUI needed - all functionality available through VBA functions.
+**That's it!** The setup process automatically creates a complete UserForm with all buttons, textboxes, and controls. No manual setup required!
 
-### Alternative: With GUI (Requires Manual Setup)
+### Alternative: VBA Functions Only (No GUI)
 
-If you want a graphical interface:
-- Import `ForecastGUI.frm` and `BatchForecastGUI.frm` (contains code structure)
-- **Manually add controls** to the UserForms (see [Detailed Setup Instructions](#detailed-setup-instructions) below)
-- This requires creating textboxes, buttons, labels, etc. in the VBA editor
+You can also use VBA functions directly without the GUI:
+```vba
+' Single component forecast
+MainModule.RunForecast()
 
-> **Note:** The .frm files contain the VBA code but not the visual controls. Controls must be added manually using the VBA editor's toolbox.
+' Batch processing (50+ components)
+BatchProcessing.ProcessAllComponents(12, 12, "additive", False)
+```
 
 ## 📋 Requirements
 
