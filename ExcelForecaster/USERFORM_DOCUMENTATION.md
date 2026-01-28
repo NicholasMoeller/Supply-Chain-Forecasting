@@ -273,50 +273,6 @@ If you don't want the GUI interface:
 
 ---
 
-## Generating Screenshot Documentation
-
-To generate a PDF with actual screenshots of the UserForms:
-
-### Prerequisites
-
-1. **Windows OS** with Excel installed
-2. **Python 3.7+** installed
-3. **Required packages**:
-   ```bash
-   pip install pywin32 pillow reportlab
-   ```
-
-### Steps
-
-1. **Ensure Excel file exists**:
-   - The script expects `TimeSeriesForecaster.xlsm` in the same directory
-   - Make sure UserForms are imported into the workbook
-
-2. **Run the capture script**:
-   ```bash
-   cd ExcelForecaster
-   python capture_userform_screenshots.py
-   ```
-
-3. **Output**:
-   - Screenshots saved to `screenshots/` directory
-   - PDF generated: `UserForm_Documentation.pdf`
-
-### What the Script Does
-
-1. Opens Excel application (visible mode)
-2. Loads the workbook
-3. Displays each UserForm (modeless)
-4. Captures full-screen screenshot
-5. Closes UserForm
-6. Generates professional PDF with:
-   - Title page
-   - Each UserForm on separate page
-   - Description of functionality
-   - High-quality screenshots
-
----
-
 ## Technical Specifications
 
 ### ForecastGUI
@@ -414,17 +370,6 @@ Both `.frm` and `.frx` files should be committed to version control:
 2. Verify code is present (view code with F7)
 3. Check for VBA errors in code
 4. Ensure all required modules are imported
-
-### Screenshot Script Fails
-
-**Problem:** Python script errors
-
-**Solution:**
-1. Run on Windows (not Linux/Mac)
-2. Excel must be installed
-3. Install all required packages
-4. Close other Excel instances
-5. Check file path is correct
 
 ---
 
