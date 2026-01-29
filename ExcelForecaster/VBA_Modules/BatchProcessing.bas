@@ -1021,79 +1021,51 @@ Private Sub GeneratePortfolioAnalysis(frequency As Long, seasonalType As String)
     ReDim portfolioLower95(1 To PortfolioHorizon)
     ReDim portfolioUpper95(1 To PortfolioHorizon)
 
-    ' Aggregate actual values and fitted values across all components
+    ' Aggregate actual values across all components
     For i = 1 To lastRow - 1
         totalActual = 0
-        totalFitted = 0
 
         ' Sum across all components for this time period
         For j = 1 To ComponentCount
             If Not ComponentResults(j).HasError Then
                 ' Get actual value from data worksheet (column j+1 because column 1 is Period)
                 totalActual = totalActual + dataWs.Cells(i + 1, j + 1).Value
-
-                ' Get fitted value from component forecast
-                If UBound(ComponentForecasts(j).FittedValues) >= i Then
-                    totalFitted = totalFitted + ComponentForecasts(j).FittedValues(i)
-                End If
             End If
         Next j
 
         portfolioActual(i) = totalActual
-        portfolioFitted(i) = totalFitted
     Next i
 
-    ' Aggregate forecast values across all components
+    ' NOW USE AUTOFORECAST ON PORTFOLIO DATA - TEST ALL 10 MODELS!
+    ' This optimizes the portfolio forecast instead of just summing components
+    Dim portfolioTsData As TimeSeriesAnalysis.TimeSeriesData
+    portfolioTsData.Values = portfolioActual
+    portfolioTsData.Frequency = CInt(frequency)
+
+    Dim portfolioResult As TimeSeriesAnalysis.ForecastResult
+    On Error Resume Next
+    portfolioResult = TimeSeriesAnalysis.AutoForecast(portfolioTsData, CInt(PortfolioHorizon), LCase(seasonalType))
+    On Error GoTo ErrorHandler
+
+    ' Use the winning model's fitted values and forecasts
+    portfolioFitted = portfolioResult.FittedValues
+
     For i = 1 To PortfolioHorizon
-        Dim totalForecast As Double
-        Dim totalLower As Double
-        Dim totalUpper As Double
-
-        totalForecast = 0
-        totalLower = 0
-        totalUpper = 0
-
-        For j = 1 To ComponentCount
-            If Not ComponentResults(j).HasError Then
-                totalForecast = totalForecast + ComponentForecasts(j).ForecastValues(i)
-                totalLower = totalLower + ComponentForecasts(j).Lower95(i)
-                totalUpper = totalUpper + ComponentForecasts(j).Upper95(i)
-            End If
-        Next j
-
-        portfolioForecast(i) = totalForecast
-        portfolioLower95(i) = totalLower
-        portfolioUpper95(i) = totalUpper
+        portfolioForecast(i) = portfolioResult.ForecastValues(i)
+        portfolioLower95(i) = portfolioResult.Lower95(i)
+        portfolioUpper95(i) = portfolioResult.Upper95(i)
     Next i
 
-    ' Calculate Portfolio MAPE
-    sumAbsPercentError = 0
-    sumAbsError = 0
-    sumSquaredError = 0
-    validPoints = 0
+    ' Portfolio metrics from the winning model
+    portfolioMAPE = portfolioResult.MAPE
+    portfolioMAE = portfolioResult.MAE
+    portfolioRMSE = portfolioResult.RMSE
 
-    For i = 1 To lastRow - 1
-        If portfolioActual(i) <> 0 Then
-            error = portfolioActual(i) - portfolioFitted(i)
-            sumAbsPercentError = sumAbsPercentError + Abs(error / portfolioActual(i)) * 100
-            sumAbsError = sumAbsError + Abs(error)
-            sumSquaredError = sumSquaredError + error * error
-            validPoints = validPoints + 1
-        End If
-    Next i
-
-    If validPoints > 0 Then
-        portfolioMAPE = sumAbsPercentError / validPoints
-        portfolioMAE = sumAbsError / validPoints
-        portfolioRMSE = Sqr(sumSquaredError / validPoints)
-    Else
-        portfolioMAPE = 0
-        portfolioMAE = 0
-        portfolioRMSE = 0
-    End If
+    Dim portfolioBestModel As String
+    portfolioBestModel = portfolioResult.ModelName
 
     ' Write portfolio metrics to summary
-    Call WritePortfolioMetrics(ws, portfolioMAPE, portfolioMAE, portfolioRMSE)
+    Call WritePortfolioMetrics(ws, portfolioMAPE, portfolioMAE, portfolioRMSE, portfolioBestModel)
 
     ' Create portfolio forecast chart (summary version)
     Call CreatePortfolioForecastChart(ws, portfolioActual, portfolioForecast, portfolioLower95, portfolioUpper95)
@@ -1101,11 +1073,7 @@ Private Sub GeneratePortfolioAnalysis(frequency As Long, seasonalType As String)
     ' Create portfolio forecast worksheet
     Call CreatePortfolioForecastSheet(portfolioActual, portfolioFitted, portfolioForecast, portfolioLower95, portfolioUpper95)
 
-    ' Calculate portfolio decomposition (seasonal analysis)
-    Dim portfolioTsData As TimeSeriesAnalysis.TimeSeriesData
-    portfolioTsData.Values = portfolioActual
-    portfolioTsData.Frequency = CInt(frequency)
-
+    ' Calculate portfolio decomposition (seasonal analysis) - reuse portfolioTsData
     Dim portfolioDecomp As TimeSeriesAnalysis.DecompositionResult
     On Error Resume Next
     portfolioDecomp = TimeSeriesAnalysis.Decompose(portfolioTsData, LCase(seasonalType))
@@ -1120,7 +1088,7 @@ ErrorHandler:
     MsgBox "Error in portfolio analysis: " & Err.Description, vbCritical
 End Sub
 
-Private Sub WritePortfolioMetrics(ws As Worksheet, mape As Double, mae As Double, rmse As Double)
+Private Sub WritePortfolioMetrics(ws As Worksheet, mape As Double, mae As Double, rmse As Double, bestModel As String)
     ' Write portfolio-level metrics to summary sheet
     Dim startRow As Long
     startRow = 2
@@ -1132,29 +1100,37 @@ Private Sub WritePortfolioMetrics(ws As Worksheet, mape As Double, mae As Double
     ws.Cells(startRow, 28).Interior.Color = RGB(68, 114, 196)
     ws.Cells(startRow, 28).Font.Color = RGB(255, 255, 255)
 
-    ' Add metrics
-    ws.Cells(startRow + 2, 28).Value = "Overall Portfolio MAPE:"
-    ws.Cells(startRow + 2, 29).Value = Format(mape, "0.00") & "%"
+    ' Add best model (NEW!)
+    ws.Cells(startRow + 2, 28).Value = "Best Portfolio Model:"
+    ws.Cells(startRow + 2, 29).Value = bestModel
     ws.Cells(startRow + 2, 29).Font.Bold = True
-    ws.Cells(startRow + 2, 29).Font.Size = 12
+    ws.Cells(startRow + 2, 29).Font.Size = 11
+    ws.Cells(startRow + 2, 29).Interior.Color = RGB(217, 225, 242) ' Light blue
+    ws.Cells(startRow + 2, 29).Font.Color = RGB(0, 0, 0)
+
+    ' Add metrics
+    ws.Cells(startRow + 4, 28).Value = "Overall Portfolio MAPE:"
+    ws.Cells(startRow + 4, 29).Value = Format(mape, "0.00") & "%"
+    ws.Cells(startRow + 4, 29).Font.Bold = True
+    ws.Cells(startRow + 4, 29).Font.Size = 12
 
     ' Color code the MAPE
     If mape < 10 Then
-        ws.Cells(startRow + 2, 29).Interior.Color = RGB(146, 208, 80) ' Green
+        ws.Cells(startRow + 4, 29).Interior.Color = RGB(146, 208, 80) ' Green
     ElseIf mape < 20 Then
-        ws.Cells(startRow + 2, 29).Interior.Color = RGB(255, 217, 102) ' Yellow
+        ws.Cells(startRow + 4, 29).Interior.Color = RGB(255, 217, 102) ' Yellow
     Else
-        ws.Cells(startRow + 2, 29).Interior.Color = RGB(255, 192, 203) ' Pink
+        ws.Cells(startRow + 4, 29).Interior.Color = RGB(255, 192, 203) ' Pink
     End If
 
-    ws.Cells(startRow + 3, 28).Value = "Portfolio MAE:"
-    ws.Cells(startRow + 3, 29).Value = Format(mae, "0.00")
+    ws.Cells(startRow + 5, 28).Value = "Portfolio MAE:"
+    ws.Cells(startRow + 5, 29).Value = Format(mae, "0.00")
 
-    ws.Cells(startRow + 4, 28).Value = "Portfolio RMSE:"
-    ws.Cells(startRow + 4, 29).Value = Format(rmse, "0.00")
+    ws.Cells(startRow + 6, 28).Value = "Portfolio RMSE:"
+    ws.Cells(startRow + 6, 29).Value = Format(rmse, "0.00")
 
-    ws.Cells(startRow + 6, 28).Value = "Components Processed:"
-    ws.Cells(startRow + 6, 29).Value = ComponentCount
+    ws.Cells(startRow + 8, 28).Value = "Components Processed:"
+    ws.Cells(startRow + 8, 29).Value = ComponentCount
 
     ' Auto-fit columns
     ws.Columns(28).AutoFit
