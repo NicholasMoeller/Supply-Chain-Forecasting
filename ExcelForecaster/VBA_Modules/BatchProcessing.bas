@@ -43,6 +43,11 @@ End Type
 Public ComponentResults() As ComponentSummary
 Public ComponentCount As Long
 
+' Global arrays to store forecasts for portfolio aggregation
+Public ComponentForecasts() As TimeSeriesAnalysis.ForecastResult
+Public ComponentActualData() As Double
+Public PortfolioHorizon As Long
+
 ' ============================================================================
 ' Load Multi-Component Data from CSV
 ' Supports two formats:
@@ -159,6 +164,8 @@ Public Sub ProcessAllComponents(frequency As Long, horizon As Long, seasonalType
     ' Initialize results array (columns start from 2, skip Period column)
     ComponentCount = lastCol - 1
     ReDim ComponentResults(1 To ComponentCount)
+    ReDim ComponentForecasts(1 To ComponentCount)
+    PortfolioHorizon = horizon
 
     ' Create summary worksheet
     Call CreateSummaryWorksheet
@@ -200,6 +207,9 @@ Public Sub ProcessAllComponents(frequency As Long, horizon As Long, seasonalType
 
     ' Calculate ABC classification
     Call CalculateABCClassification
+
+    ' Calculate portfolio-level metrics and create portfolio forecast chart
+    Call GeneratePortfolioAnalysis
 
     ' Create detailed diagnostics for worst/best components if requested
     If fullDiagnostics Then
@@ -307,6 +317,11 @@ Private Sub ProcessSingleComponent(componentName As String, data() As Double, _
 StoreResults:
     ' Store results
     ComponentResults(resultIndex) = summary
+
+    ' Store full forecast for portfolio aggregation
+    If Not summary.HasError Then
+        ComponentForecasts(resultIndex) = bestResult
+    End If
 
     ' Write to summary worksheet
     Call WriteSummaryRow(resultIndex, summary)
@@ -966,4 +981,295 @@ Public Sub ExportBatchResults(exportPath As String)
 
 ErrorHandler:
     MsgBox "Error exporting results: " & Err.Description, vbCritical
+End Sub
+
+' ============================================================================
+' PORTFOLIO-LEVEL ANALYSIS
+' Aggregate all components to calculate overall portfolio metrics and forecast
+' ============================================================================
+
+Private Sub GeneratePortfolioAnalysis()
+    On Error GoTo ErrorHandler
+
+    Dim ws As Worksheet
+    Dim dataWs As Worksheet
+    Dim portfolioMAPE As Double
+    Dim portfolioMAE As Double
+    Dim portfolioRMSE As Double
+    Dim i As Long, j As Long
+    Dim lastRow As Long
+    Dim totalActual As Double, totalFitted As Double
+    Dim error As Double
+    Dim sumAbsError As Double, sumAbsPercentError As Double
+    Dim sumSquaredError As Double
+    Dim validPoints As Long
+
+    Set ws = ThisWorkbook.Worksheets("BatchSummary")
+    Set dataWs = ThisWorkbook.Worksheets("MultiComponentData")
+    lastRow = dataWs.Cells(dataWs.Rows.Count, 1).End(xlUp).Row
+
+    ' Initialize aggregated arrays for portfolio
+    Dim portfolioActual() As Double
+    Dim portfolioFitted() As Double
+    Dim portfolioForecast() As Double
+    Dim portfolioLower95() As Double
+    Dim portfolioUpper95() As Double
+
+    ReDim portfolioActual(1 To lastRow - 1)
+    ReDim portfolioFitted(1 To lastRow - 1)
+    ReDim portfolioForecast(1 To PortfolioHorizon)
+    ReDim portfolioLower95(1 To PortfolioHorizon)
+    ReDim portfolioUpper95(1 To PortfolioHorizon)
+
+    ' Aggregate actual values and fitted values across all components
+    For i = 1 To lastRow - 1
+        totalActual = 0
+        totalFitted = 0
+
+        ' Sum across all components for this time period
+        For j = 1 To ComponentCount
+            If Not ComponentResults(j).HasError Then
+                ' Get actual value from data worksheet (column j+1 because column 1 is Period)
+                totalActual = totalActual + dataWs.Cells(i + 1, j + 1).Value
+
+                ' Get fitted value from component forecast
+                If UBound(ComponentForecasts(j).FittedValues) >= i Then
+                    totalFitted = totalFitted + ComponentForecasts(j).FittedValues(i)
+                End If
+            End If
+        Next j
+
+        portfolioActual(i) = totalActual
+        portfolioFitted(i) = totalFitted
+    Next i
+
+    ' Aggregate forecast values across all components
+    For i = 1 To PortfolioHorizon
+        Dim totalForecast As Double
+        Dim totalLower As Double
+        Dim totalUpper As Double
+
+        totalForecast = 0
+        totalLower = 0
+        totalUpper = 0
+
+        For j = 1 To ComponentCount
+            If Not ComponentResults(j).HasError Then
+                totalForecast = totalForecast + ComponentForecasts(j).ForecastValues(i)
+                totalLower = totalLower + ComponentForecasts(j).Lower95(i)
+                totalUpper = totalUpper + ComponentForecasts(j).Upper95(i)
+            End If
+        Next j
+
+        portfolioForecast(i) = totalForecast
+        portfolioLower95(i) = totalLower
+        portfolioUpper95(i) = totalUpper
+    Next i
+
+    ' Calculate Portfolio MAPE
+    sumAbsPercentError = 0
+    sumAbsError = 0
+    sumSquaredError = 0
+    validPoints = 0
+
+    For i = 1 To lastRow - 1
+        If portfolioActual(i) <> 0 Then
+            error = portfolioActual(i) - portfolioFitted(i)
+            sumAbsPercentError = sumAbsPercentError + Abs(error / portfolioActual(i)) * 100
+            sumAbsError = sumAbsError + Abs(error)
+            sumSquaredError = sumSquaredError + error * error
+            validPoints = validPoints + 1
+        End If
+    Next i
+
+    If validPoints > 0 Then
+        portfolioMAPE = sumAbsPercentError / validPoints
+        portfolioMAE = sumAbsError / validPoints
+        portfolioRMSE = Sqr(sumSquaredError / validPoints)
+    Else
+        portfolioMAPE = 0
+        portfolioMAE = 0
+        portfolioRMSE = 0
+    End If
+
+    ' Write portfolio metrics to summary
+    Call WritePortfolioMetrics(ws, portfolioMAPE, portfolioMAE, portfolioRMSE)
+
+    ' Create portfolio forecast chart
+    Call CreatePortfolioForecastChart(ws, portfolioActual, portfolioForecast, portfolioLower95, portfolioUpper95)
+
+    ' Create portfolio forecast worksheet
+    Call CreatePortfolioForecastSheet(portfolioActual, portfolioFitted, portfolioForecast, portfolioLower95, portfolioUpper95)
+
+    Exit Sub
+
+ErrorHandler:
+    MsgBox "Error in portfolio analysis: " & Err.Description, vbCritical
+End Sub
+
+Private Sub WritePortfolioMetrics(ws As Worksheet, mape As Double, mae As Double, rmse As Double)
+    ' Write portfolio-level metrics to summary sheet
+    Dim startRow As Long
+    startRow = 2
+
+    ' Add header
+    ws.Cells(startRow, 28).Value = "PORTFOLIO METRICS"
+    ws.Cells(startRow, 28).Font.Bold = True
+    ws.Cells(startRow, 28).Font.Size = 14
+    ws.Cells(startRow, 28).Interior.Color = RGB(68, 114, 196)
+    ws.Cells(startRow, 28).Font.Color = RGB(255, 255, 255)
+
+    ' Add metrics
+    ws.Cells(startRow + 2, 28).Value = "Overall Portfolio MAPE:"
+    ws.Cells(startRow + 2, 29).Value = Format(mape, "0.00") & "%"
+    ws.Cells(startRow + 2, 29).Font.Bold = True
+    ws.Cells(startRow + 2, 29).Font.Size = 12
+
+    ' Color code the MAPE
+    If mape < 10 Then
+        ws.Cells(startRow + 2, 29).Interior.Color = RGB(146, 208, 80) ' Green
+    ElseIf mape < 20 Then
+        ws.Cells(startRow + 2, 29).Interior.Color = RGB(255, 217, 102) ' Yellow
+    Else
+        ws.Cells(startRow + 2, 29).Interior.Color = RGB(255, 192, 203) ' Pink
+    End If
+
+    ws.Cells(startRow + 3, 28).Value = "Portfolio MAE:"
+    ws.Cells(startRow + 3, 29).Value = Format(mae, "0.00")
+
+    ws.Cells(startRow + 4, 28).Value = "Portfolio RMSE:"
+    ws.Cells(startRow + 4, 29).Value = Format(rmse, "0.00")
+
+    ws.Cells(startRow + 6, 28).Value = "Components Processed:"
+    ws.Cells(startRow + 6, 29).Value = ComponentCount
+
+    ' Auto-fit columns
+    ws.Columns(28).AutoFit
+    ws.Columns(29).AutoFit
+End Sub
+
+Private Sub CreatePortfolioForecastChart(ws As Worksheet, actual() As Double, forecast() As Double, lower() As Double, upper() As Double)
+    On Error Resume Next
+    ws.ChartObjects("PortfolioForecast").Delete
+    On Error GoTo 0
+
+    Dim chartObj As ChartObject
+    Dim cht As Chart
+    Dim i As Long
+
+    ' Create data range for chart in temporary location
+    Dim dataStartRow As Long
+    dataStartRow = 10
+
+    ' Write data for chart
+    ws.Cells(dataStartRow, 28).Value = "Period"
+    ws.Cells(dataStartRow, 29).Value = "Actual"
+    ws.Cells(dataStartRow, 30).Value = "Forecast"
+    ws.Cells(dataStartRow, 31).Value = "Lower 95%"
+    ws.Cells(dataStartRow, 32).Value = "Upper 95%"
+
+    ' Historical data
+    For i = 1 To UBound(actual)
+        ws.Cells(dataStartRow + i, 28).Value = i
+        ws.Cells(dataStartRow + i, 29).Value = actual(i)
+    Next i
+
+    ' Forecast data
+    For i = 1 To UBound(forecast)
+        ws.Cells(dataStartRow + UBound(actual) + i, 28).Value = UBound(actual) + i
+        ws.Cells(dataStartRow + UBound(actual) + i, 30).Value = forecast(i)
+        ws.Cells(dataStartRow + UBound(actual) + i, 31).Value = lower(i)
+        ws.Cells(dataStartRow + UBound(actual) + i, 32).Value = upper(i)
+    Next i
+
+    ' Create chart
+    Set chartObj = ws.ChartObjects.Add(Left:=ws.Cells(dataStartRow + UBound(actual) + UBound(forecast) + 3, 28).Left, _
+                                       Top:=ws.Cells(dataStartRow + UBound(actual) + UBound(forecast) + 3, 28).Top, _
+                                       Width:=600, Height:=400)
+    chartObj.Name = "PortfolioForecast"
+    Set cht = chartObj.Chart
+
+    With cht
+        .ChartType = xlLine
+        .SetSourceData ws.Range(ws.Cells(dataStartRow, 28), ws.Cells(dataStartRow + UBound(actual) + UBound(forecast), 32))
+        .HasTitle = True
+        .ChartTitle.Text = "Portfolio Forecast - Aggregated Across All Components"
+        .Axes(xlCategory).HasTitle = True
+        .Axes(xlCategory).AxisTitle.Text = "Period"
+        .Axes(xlValue).HasTitle = True
+        .Axes(xlValue).AxisTitle.Text = "Total Volume"
+        .HasLegend = True
+        .Legend.Position = xlLegendPositionBottom
+
+        ' Format series
+        .SeriesCollection(1).Name = "Actual"
+        .SeriesCollection(1).Format.Line.Weight = 2
+        .SeriesCollection(1).Format.Line.ForeColor.RGB = RGB(68, 114, 196)
+
+        .SeriesCollection(2).Name = "Forecast"
+        .SeriesCollection(2).Format.Line.Weight = 2
+        .SeriesCollection(2).Format.Line.ForeColor.RGB = RGB(237, 125, 49)
+        .SeriesCollection(2).Format.Line.DashStyle = msoLineDash
+
+        .SeriesCollection(3).Name = "Lower 95% CI"
+        .SeriesCollection(3).Format.Line.Weight = 1
+        .SeriesCollection(3).Format.Line.ForeColor.RGB = RGB(192, 192, 192)
+        .SeriesCollection(3).Format.Line.DashStyle = msoLineDash
+
+        .SeriesCollection(4).Name = "Upper 95% CI"
+        .SeriesCollection(4).Format.Line.Weight = 1
+        .SeriesCollection(4).Format.Line.ForeColor.RGB = RGB(192, 192, 192)
+        .SeriesCollection(4).Format.Line.DashStyle = msoLineDash
+    End With
+End Sub
+
+Private Sub CreatePortfolioForecastSheet(actual() As Double, fitted() As Double, forecast() As Double, lower() As Double, upper() As Double)
+    On Error Resume Next
+    Dim ws As Worksheet
+    Dim i As Long
+
+    ' Create or clear PortfolioForecast worksheet
+    Set ws = ThisWorkbook.Worksheets("PortfolioForecast")
+    If ws Is Nothing Then
+        Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))
+        ws.Name = "PortfolioForecast"
+    Else
+        ws.Cells.Clear
+    End If
+    On Error GoTo 0
+
+    ' Write headers
+    ws.Cells(1, 1).Value = "Period"
+    ws.Cells(1, 2).Value = "Actual"
+    ws.Cells(1, 3).Value = "Fitted"
+    ws.Cells(1, 4).Value = "Forecast"
+    ws.Cells(1, 5).Value = "Lower 95%"
+    ws.Cells(1, 6).Value = "Upper 95%"
+
+    ' Format headers
+    ws.Range("A1:F1").Font.Bold = True
+    ws.Range("A1:F1").Interior.Color = RGB(68, 114, 196)
+    ws.Range("A1:F1").Font.Color = RGB(255, 255, 255)
+
+    ' Write historical data
+    For i = 1 To UBound(actual)
+        ws.Cells(i + 1, 1).Value = i
+        ws.Cells(i + 1, 2).Value = actual(i)
+        ws.Cells(i + 1, 3).Value = fitted(i)
+    Next i
+
+    ' Write forecast data
+    For i = 1 To UBound(forecast)
+        ws.Cells(UBound(actual) + i + 1, 1).Value = UBound(actual) + i
+        ws.Cells(UBound(actual) + i + 1, 4).Value = forecast(i)
+        ws.Cells(UBound(actual) + i + 1, 5).Value = lower(i)
+        ws.Cells(UBound(actual) + i + 1, 6).Value = upper(i)
+    Next i
+
+    ' Auto-fit columns
+    ws.Columns("A:F").AutoFit
+
+    ' Add a note
+    ws.Cells(UBound(actual) + UBound(forecast) + 3, 1).Value = "Note: Portfolio values are aggregated totals across all components"
+    ws.Cells(UBound(actual) + UBound(forecast) + 3, 1).Font.Italic = True
 End Sub
