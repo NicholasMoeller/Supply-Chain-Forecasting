@@ -278,7 +278,7 @@ Private Sub ProcessSingleComponent(componentName As String, data() As Double, _
         GoTo StoreResults
     End If
 
-    ' AutoForecast tests: SES, HW, Damped HW, Theta, Ensemble, and ARIMA - picks best MAPE
+    ' AutoForecast tests 10 methods: SES, HW, Damped HW, Theta, Ensemble, ARIMA, Croston, Auto-ARIMA, Advanced Ensemble, Alt-HW - picks best MAPE!
     bestResult = TimeSeriesAnalysis.AutoForecast(tsData, CInt(horizon), seasonalType)
 
     ' Store best result

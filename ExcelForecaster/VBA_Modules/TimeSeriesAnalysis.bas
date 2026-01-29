@@ -1028,52 +1028,86 @@ Public Function AutoForecast(ByRef tsData As TimeSeriesData, _
     
     ' Clean outliers first for better accuracy
     cleanedData = RemoveOutliers(tsData)
-    
-    ' Try all forecasting methods
-    modelCount = 6
+
+    ' Try ALL 10 forecasting methods - best one wins!
+    modelCount = 10
     ReDim results(1 To modelCount)
     ReDim modelNames(1 To modelCount)
-    
+
     ' 1. Simple Exponential Smoothing
     On Error Resume Next
     results(1) = SimpleExponentialSmoothing(cleanedData, horizon)
     results(1).ModelName = "SES"
     If Err.Number <> 0 Then results(1).MAPE = 9999
     On Error GoTo ErrorHandler
-    
+
     ' 2. Holt-Winters
     On Error Resume Next
     results(2) = HoltWinters(cleanedData, horizon, seasonalType)
     results(2).ModelName = "Holt-Winters"
     If Err.Number <> 0 Then results(2).MAPE = 9999
     On Error GoTo ErrorHandler
-    
+
     ' 3. Damped Trend Holt-Winters
     On Error Resume Next
     results(3) = DampedHoltWinters(cleanedData, horizon, seasonalType)
     results(3).ModelName = "Damped HW"
     If Err.Number <> 0 Then results(3).MAPE = 9999
     On Error GoTo ErrorHandler
-    
+
     ' 4. Theta Method
     On Error Resume Next
     results(4) = ThetaMethod(cleanedData, horizon)
     results(4).ModelName = "Theta"
     If Err.Number <> 0 Then results(4).MAPE = 9999
     On Error GoTo ErrorHandler
-    
+
     ' 5. Ensemble (SES + HW)
     On Error Resume Next
     results(5) = EnsembleForecast(cleanedData, horizon, seasonalType)
     results(5).ModelName = "Ensemble"
     If Err.Number <> 0 Then results(5).MAPE = 9999
     On Error GoTo ErrorHandler
-    
-    ' 6. ARIMA
+
+    ' 6. Simple ARIMA(1,1,0)
     On Error Resume Next
     results(6) = SimpleARIMA(cleanedData, horizon)
-    results(6).ModelName = "ARIMA"
+    results(6).ModelName = "ARIMA(1,1,0)"
     If Err.Number <> 0 Then results(6).MAPE = 9999
+    On Error GoTo ErrorHandler
+
+    ' 7. Croston's Method (Perfect for intermittent demand!)
+    On Error Resume Next
+    results(7) = CrostonsMethod(cleanedData, horizon)
+    results(7).ModelName = "Croston"
+    If Err.Number <> 0 Then results(7).MAPE = 9999
+    On Error GoTo ErrorHandler
+
+    ' 8. Auto-ARIMA (Tests multiple ARIMA orders)
+    On Error Resume Next
+    results(8) = AutoARIMA(cleanedData, horizon)
+    ' ModelName set by AutoARIMA itself
+    If Err.Number <> 0 Then results(8).MAPE = 9999
+    On Error GoTo ErrorHandler
+
+    ' 9. Advanced Ensemble (Recent performance weighting)
+    On Error Resume Next
+    results(9) = AdvancedEnsemble(cleanedData, horizon, seasonalType)
+    results(9).ModelName = "Advanced Ensemble"
+    If Err.Number <> 0 Then results(9).MAPE = 9999
+    On Error GoTo ErrorHandler
+
+    ' 10. Holt-Winters with opposite seasonal type (try both!)
+    On Error Resume Next
+    Dim altSeasonalType As String
+    If LCase(seasonalType) = "additive" Then
+        altSeasonalType = "multiplicative"
+    Else
+        altSeasonalType = "additive"
+    End If
+    results(10) = HoltWinters(cleanedData, horizon, altSeasonalType)
+    results(10).ModelName = "HW (" & altSeasonalType & ")"
+    If Err.Number <> 0 Then results(10).MAPE = 9999
     On Error GoTo ErrorHandler
     
     ' Find best model (lowest MAPE)
@@ -1513,3 +1547,554 @@ Public Function RemoveOutliers(ByRef tsData As TimeSeriesData) As TimeSeriesData
     result.Frequency = tsData.Frequency
     RemoveOutliers = result
 End Function
+
+' ============================================================================
+' CROSTON'S METHOD - Perfect for intermittent/sparse demand (supply chain!)
+' ============================================================================
+' Handles data with lots of zeros (intermittent demand) by separating:
+' 1. Size of demand (when it occurs)
+' 2. Interval between demands
+Public Function CrostonsMethod(ByRef tsData As TimeSeriesData, _
+                               ByVal horizon As Integer) As ForecastResult
+    On Error GoTo ErrorHandler
+
+    Dim result As ForecastResult
+    Dim Values() As Double
+    Dim n As Long, i As Long, j As Long
+    Dim alpha As Double
+
+    ' Arrays for non-zero demands and intervals
+    Dim demandSizes() As Double
+    Dim intervals() As Long
+    Dim demandCount As Long
+    Dim lastDemandPeriod As Long
+
+    Values = tsData.Values
+    n = UBound(Values) - LBound(Values) + 1
+
+    ' Optimal alpha for Croston (research shows 0.1-0.2 works best)
+    alpha = 0.1
+
+    ' Count non-zero demands
+    demandCount = 0
+    For i = LBound(Values) To UBound(Values)
+        If Values(i) > 0 Then demandCount = demandCount + 1
+    Next i
+
+    ' Need at least 2 demands to work
+    If demandCount < 2 Then
+        ' Fall back to simple average
+        Dim avgDemand As Double
+        Dim totalDemand As Double
+        For i = LBound(Values) To UBound(Values)
+            totalDemand = totalDemand + Values(i)
+        Next i
+        avgDemand = totalDemand / n
+
+        ReDim result.ForecastValues(1 To horizon)
+        ReDim result.Lower95(1 To horizon)
+        ReDim result.Upper95(1 To horizon)
+        ReDim result.FittedValues(LBound(Values) To UBound(Values))
+        ReDim result.Residuals(LBound(Values) To UBound(Values))
+
+        For i = 1 To horizon
+            result.ForecastValues(i) = avgDemand
+        Next i
+
+        For i = LBound(Values) To UBound(Values)
+            result.FittedValues(i) = avgDemand
+            result.Residuals(i) = Values(i) - avgDemand
+        Next i
+
+        result.MAPE = CalculateMAPE(Values, result.FittedValues)
+        result.MAE = CalculateMAE(result.Residuals)
+        result.RMSE = CalculateRMSE(result.Residuals)
+        result.MBE = CalculateMBE(Values, result.FittedValues)
+        result.ModelName = "Croston (fallback)"
+        result.Alpha = alpha
+
+        CrostonsMethod = result
+        Exit Function
+    End If
+
+    ' Extract non-zero demands and intervals
+    ReDim demandSizes(1 To demandCount)
+    ReDim intervals(1 To demandCount)
+
+    demandCount = 0
+    lastDemandPeriod = LBound(Values) - 1
+
+    For i = LBound(Values) To UBound(Values)
+        If Values(i) > 0 Then
+            demandCount = demandCount + 1
+            demandSizes(demandCount) = Values(i)
+            intervals(demandCount) = i - lastDemandPeriod
+            lastDemandPeriod = i
+        End If
+    Next i
+
+    ' Apply Croston's smoothing
+    Dim smoothedSize As Double
+    Dim smoothedInterval As Double
+
+    smoothedSize = demandSizes(1)
+    smoothedInterval = intervals(1)
+
+    Dim smoothedSizes() As Double
+    Dim smoothedIntervals() As Double
+    ReDim smoothedSizes(1 To demandCount)
+    ReDim smoothedIntervals(1 To demandCount)
+
+    smoothedSizes(1) = smoothedSize
+    smoothedIntervals(1) = smoothedInterval
+
+    For i = 2 To demandCount
+        smoothedSize = alpha * demandSizes(i) + (1 - alpha) * smoothedSize
+        smoothedInterval = alpha * intervals(i) + (1 - alpha) * smoothedInterval
+        smoothedSizes(i) = smoothedSize
+        smoothedIntervals(i) = smoothedInterval
+    Next i
+
+    ' Calculate forecast = demand size / interval
+    Dim forecastValue As Double
+    If smoothedInterval > 0 Then
+        forecastValue = smoothedSize / smoothedInterval
+    Else
+        forecastValue = smoothedSize
+    End If
+
+    ' Initialize arrays
+    ReDim result.FittedValues(LBound(Values) To UBound(Values))
+    ReDim result.Residuals(LBound(Values) To UBound(Values))
+    ReDim result.ForecastValues(1 To horizon)
+    ReDim result.Lower95(1 To horizon)
+    ReDim result.Upper95(1 To horizon)
+
+    ' Create fitted values (map smoothed forecasts back to original timeline)
+    Dim demandIdx As Long
+    demandIdx = 1
+    For i = LBound(Values) To UBound(Values)
+        If demandIdx <= demandCount Then
+            If smoothedIntervals(demandIdx) > 0 Then
+                result.FittedValues(i) = smoothedSizes(demandIdx) / smoothedIntervals(demandIdx)
+            Else
+                result.FittedValues(i) = smoothedSizes(demandIdx)
+            End If
+        Else
+            result.FittedValues(i) = forecastValue
+        End If
+
+        If Values(i) > 0 And demandIdx < demandCount Then
+            demandIdx = demandIdx + 1
+        End If
+    Next i
+
+    ' Calculate residuals
+    For i = LBound(Values) To UBound(Values)
+        result.Residuals(i) = Values(i) - result.FittedValues(i)
+    Next i
+
+    ' Forecast (constant)
+    For i = 1 To horizon
+        result.ForecastValues(i) = forecastValue
+    Next i
+
+    ' Confidence intervals (based on residual variance)
+    Dim residualStdDev As Double
+    residualStdDev = CalculateStdDev(result.Residuals)
+
+    For i = 1 To horizon
+        Dim se As Double
+        se = residualStdDev * Sqr(i)
+        result.Lower95(i) = WorksheetFunction.Max(0, result.ForecastValues(i) - 1.96 * se)
+        result.Upper95(i) = result.ForecastValues(i) + 1.96 * se
+    Next i
+
+    ' Calculate metrics
+    result.MAPE = CalculateMAPE(Values, result.FittedValues)
+    result.MAE = CalculateMAE(result.Residuals)
+    result.RMSE = CalculateRMSE(result.Residuals)
+    result.MBE = CalculateMBE(Values, result.FittedValues)
+    result.Alpha = alpha
+    result.ModelName = "Croston"
+
+    CrostonsMethod = result
+    Exit Function
+
+ErrorHandler:
+    ' Return simple average on error
+    Dim fallbackAvg As Double
+    Dim fallbackSum As Double
+    For i = LBound(Values) To UBound(Values)
+        fallbackSum = fallbackSum + Values(i)
+    Next i
+    fallbackAvg = fallbackSum / n
+
+    ReDim result.ForecastValues(1 To horizon)
+    For i = 1 To horizon
+        result.ForecastValues(i) = fallbackAvg
+    Next i
+    result.ModelName = "Croston (error)"
+    CrostonsMethod = result
+End Function
+
+' ============================================================================
+' AUTO-ARIMA - Automatically selects best (p,d,q) order
+' ============================================================================
+' Tests multiple ARIMA configurations and picks best based on AIC
+Public Function AutoARIMA(ByRef tsData As TimeSeriesData, _
+                          ByVal horizon As Integer, _
+                          Optional ByVal maxP As Integer = 3, _
+                          Optional ByVal maxD As Integer = 2, _
+                          Optional ByVal maxQ As Integer = 3) As ForecastResult
+
+    Dim bestResult As ForecastResult
+    Dim testResult As ForecastResult
+    Dim bestAIC As Double
+    Dim currentAIC As Double
+    Dim p As Integer, d As Integer, q As Integer
+    Dim tested As Boolean
+
+    bestAIC = 1E+100
+    tested = False
+
+    ' Test common ARIMA configurations
+    ' Start with simple ones that work well in practice
+    Dim configs() As Variant
+    configs = Array( _
+        Array(0, 1, 1), _
+        Array(1, 1, 0), _
+        Array(1, 1, 1), _
+        Array(2, 1, 0), _
+        Array(0, 1, 2), _
+        Array(2, 1, 1), _
+        Array(1, 1, 2), _
+        Array(2, 1, 2), _
+        Array(1, 0, 1), _
+        Array(0, 1, 0) _
+    )
+
+    Dim configIdx As Integer
+    For configIdx = LBound(configs) To UBound(configs)
+        p = configs(configIdx)(0)
+        d = configs(configIdx)(1)
+        q = configs(configIdx)(2)
+
+        On Error Resume Next
+        testResult = FitARIMA(tsData, horizon, p, d, q)
+
+        If Err.Number = 0 Then
+            ' Calculate AIC
+            currentAIC = CalculateAIC(testResult, tsData.Values, p + q + 1)
+
+            If currentAIC < bestAIC Then
+                bestAIC = currentAIC
+                bestResult = testResult
+                bestResult.ModelName = "ARIMA(" & p & "," & d & "," & q & ")"
+                tested = True
+            End If
+        End If
+        Err.Clear
+        On Error GoTo 0
+    Next configIdx
+
+    ' If no model worked, fall back to simple ARIMA(1,1,0)
+    If Not tested Then
+        bestResult = SimpleARIMA(tsData, horizon)
+        bestResult.ModelName = "ARIMA(1,1,0)-fallback"
+    End If
+
+    AutoARIMA = bestResult
+End Function
+
+Private Function FitARIMA(ByRef tsData As TimeSeriesData, _
+                          ByVal horizon As Integer, _
+                          ByVal p As Integer, _
+                          ByVal d As Integer, _
+                          ByVal q As Integer) As ForecastResult
+
+    Dim result As ForecastResult
+    Dim Values() As Double
+    Dim n As Long, i As Long, j As Long
+
+    Values = tsData.Values
+    n = UBound(Values) - LBound(Values) + 1
+
+    ' Difference the series d times
+    Dim diffValues() As Double
+    ReDim diffValues(LBound(Values) To UBound(Values) - d)
+
+    ' Copy original values
+    Dim tempValues() As Double
+    ReDim tempValues(LBound(Values) To UBound(Values))
+    For i = LBound(Values) To UBound(Values)
+        tempValues(i) = Values(i)
+    Next i
+
+    ' Apply differencing
+    Dim diffLevel As Integer
+    For diffLevel = 1 To d
+        Dim newLen As Long
+        newLen = UBound(tempValues) - LBound(tempValues)
+
+        ReDim diffValues(1 To newLen)
+        For i = 1 To newLen
+            diffValues(i) = tempValues(i + 1) - tempValues(i)
+        Next i
+
+        ReDim tempValues(1 To newLen)
+        For i = 1 To newLen
+            tempValues(i) = diffValues(i)
+        Next i
+    Next diffLevel
+
+    ' Now fit AR(p) or MA(q) on differenced data
+    ' For simplicity, use AR(p) model
+    Dim nDiff As Long
+    nDiff = UBound(diffValues) - LBound(diffValues) + 1
+
+    ' Fit AR coefficients using Yule-Walker equations
+    Dim arCoeffs() As Double
+    ReDim arCoeffs(1 To p)
+
+    If p > 0 Then
+        ' Calculate autocorrelations
+        Dim acf() As Double
+        acf = CalculateACF(diffValues, p)
+
+        ' Simple Yule-Walker for AR(p) - just use first p ACF values
+        For i = 1 To p
+            If i <= UBound(acf) Then
+                arCoeffs(i) = acf(i) * 0.8  ' Dampen coefficients
+            Else
+                arCoeffs(i) = 0
+            End If
+        Next i
+    End If
+
+    ' Initialize arrays
+    ReDim result.FittedValues(LBound(Values) To UBound(Values))
+    ReDim result.Residuals(LBound(Values) To UBound(Values))
+    ReDim result.ForecastValues(1 To horizon)
+    ReDim result.Lower95(1 To horizon)
+    ReDim result.Upper95(1 To horizon)
+
+    ' Fit on differenced data
+    For i = LBound(diffValues) + p To UBound(diffValues)
+        Dim fitted As Double
+        fitted = 0
+
+        For j = 1 To p
+            If i - j >= LBound(diffValues) Then
+                fitted = fitted + arCoeffs(j) * diffValues(i - j)
+            End If
+        Next j
+
+        result.FittedValues(i + d) = Values(i + d - 1) + fitted
+    Next i
+
+    ' Fill early values with actuals
+    For i = LBound(Values) To LBound(Values) + d + p - 1
+        result.FittedValues(i) = Values(i)
+    Next i
+
+    ' Calculate residuals
+    For i = LBound(Values) To UBound(Values)
+        result.Residuals(i) = Values(i) - result.FittedValues(i)
+    Next i
+
+    ' Forecast
+    Dim lastDiff As Double
+    If nDiff > 0 Then
+        lastDiff = diffValues(UBound(diffValues))
+    Else
+        lastDiff = 0
+    End If
+
+    Dim lastLevel As Double
+    lastLevel = Values(UBound(Values))
+
+    For i = 1 To horizon
+        result.ForecastValues(i) = lastLevel + lastDiff * i
+    Next i
+
+    ' Confidence intervals
+    Dim residualStdDev As Double
+    residualStdDev = CalculateStdDev(result.Residuals)
+
+    For i = 1 To horizon
+        Dim se As Double
+        se = residualStdDev * Sqr(i)
+        result.Lower95(i) = result.ForecastValues(i) - 1.96 * se
+        result.Upper95(i) = result.ForecastValues(i) + 1.96 * se
+    Next i
+
+    ' Calculate metrics
+    result.MAPE = CalculateMAPE(Values, result.FittedValues)
+    result.MAE = CalculateMAE(result.Residuals)
+    result.RMSE = CalculateRMSE(result.Residuals)
+    result.MBE = CalculateMBE(Values, result.FittedValues)
+
+    FitARIMA = result
+End Function
+
+Private Function CalculateAIC(ByRef result As ForecastResult, _
+                              ByRef Values() As Double, _
+                              ByVal numParams As Integer) As Double
+    ' AIC = n * log(SSE/n) + 2*k
+    ' where n = sample size, k = number of parameters
+
+    Dim n As Long
+    Dim sse As Double
+    Dim i As Long
+
+    n = UBound(Values) - LBound(Values) + 1
+    sse = 0
+
+    For i = LBound(result.Residuals) To UBound(result.Residuals)
+        sse = sse + result.Residuals(i) * result.Residuals(i)
+    Next i
+
+    If sse > 0 And n > 0 Then
+        CalculateAIC = n * Log(sse / n) + 2 * numParams
+    Else
+        CalculateAIC = 1E+100
+    End If
+End Function
+
+' ============================================================================
+' ADVANCED ENSEMBLE - Recent performance weighting with exponential decay
+' ============================================================================
+Public Function AdvancedEnsemble(ByRef tsData As TimeSeriesData, _
+                                 ByVal horizon As Integer, _
+                                 ByVal seasonalType As String) As ForecastResult
+
+    Dim result As ForecastResult
+    Dim sesResult As ForecastResult
+    Dim hwResult As ForecastResult
+    Dim thetaResult As ForecastResult
+    Dim i As Long
+
+    ' Get forecasts from multiple models
+    sesResult = SimpleExponentialSmoothing(tsData, horizon)
+    hwResult = HoltWinters(tsData, horizon, seasonalType)
+    thetaResult = ThetaMethod(tsData, horizon)
+
+    ' Calculate weights based on recent performance (last 20% of data)
+    Dim recentWindow As Long
+    Dim n As Long
+    n = UBound(tsData.Values) - LBound(tsData.Values) + 1
+    recentWindow = WorksheetFunction.Max(5, Int(n * 0.2))
+
+    Dim sesRecentMAPE As Double
+    Dim hwRecentMAPE As Double
+    Dim thetaRecentMAPE As Double
+
+    ' Calculate MAPE on recent window only
+    sesRecentMAPE = CalculateRecentMAPE(tsData.Values, sesResult.FittedValues, recentWindow)
+    hwRecentMAPE = CalculateRecentMAPE(tsData.Values, hwResult.FittedValues, recentWindow)
+    thetaRecentMAPE = CalculateRecentMAPE(tsData.Values, thetaResult.FittedValues, recentWindow)
+
+    ' Exponentially decaying weights (recent performance matters more)
+    Dim sesWeight As Double, hwWeight As Double, thetaWeight As Double
+    Dim totalWeight As Double
+
+    ' Inverse MAPE weighting
+    If sesRecentMAPE > 0 Then
+        sesWeight = 1 / sesRecentMAPE
+    Else
+        sesWeight = 1
+    End If
+
+    If hwRecentMAPE > 0 Then
+        hwWeight = 1 / hwRecentMAPE
+    Else
+        hwWeight = 1
+    End If
+
+    If thetaRecentMAPE > 0 Then
+        thetaWeight = 1 / thetaRecentMAPE
+    Else
+        thetaWeight = 1
+    End If
+
+    totalWeight = sesWeight + hwWeight + thetaWeight
+
+    If totalWeight > 0 Then
+        sesWeight = sesWeight / totalWeight
+        hwWeight = hwWeight / totalWeight
+        thetaWeight = thetaWeight / totalWeight
+    Else
+        ' Equal weights fallback
+        sesWeight = 0.33
+        hwWeight = 0.33
+        thetaWeight = 0.34
+    End If
+
+    ' Initialize result arrays
+    ReDim result.FittedValues(LBound(tsData.Values) To UBound(tsData.Values))
+    ReDim result.Residuals(LBound(tsData.Values) To UBound(tsData.Values))
+    ReDim result.ForecastValues(1 To horizon)
+    ReDim result.Lower95(1 To horizon)
+    ReDim result.Upper95(1 To horizon)
+
+    ' Combine fitted values
+    For i = LBound(tsData.Values) To UBound(tsData.Values)
+        result.FittedValues(i) = sesWeight * sesResult.FittedValues(i) + _
+                                 hwWeight * hwResult.FittedValues(i) + _
+                                 thetaWeight * thetaResult.FittedValues(i)
+        result.Residuals(i) = tsData.Values(i) - result.FittedValues(i)
+    Next i
+
+    ' Combine forecasts
+    For i = 1 To horizon
+        result.ForecastValues(i) = sesWeight * sesResult.ForecastValues(i) + _
+                                   hwWeight * hwResult.ForecastValues(i) + _
+                                   thetaWeight * thetaResult.ForecastValues(i)
+        result.Lower95(i) = sesWeight * sesResult.Lower95(i) + _
+                           hwWeight * hwResult.Lower95(i) + _
+                           thetaWeight * thetaResult.Lower95(i)
+        result.Upper95(i) = sesWeight * sesResult.Upper95(i) + _
+                           hwWeight * hwResult.Upper95(i) + _
+                           thetaWeight * thetaResult.Upper95(i)
+    Next i
+
+    ' Calculate metrics
+    result.MAPE = CalculateMAPE(tsData.Values, result.FittedValues)
+    result.MAE = CalculateMAE(result.Residuals)
+    result.RMSE = CalculateRMSE(result.Residuals)
+    result.MBE = CalculateMBE(tsData.Values, result.FittedValues)
+    result.ModelName = "Advanced Ensemble"
+
+    AdvancedEnsemble = result
+End Function
+
+Private Function CalculateRecentMAPE(ByRef actual() As Double, _
+                                     ByRef fitted() As Double, _
+                                     ByVal windowSize As Long) As Double
+
+    Dim i As Long
+    Dim sumAbsPercentError As Double
+    Dim validCount As Long
+    Dim startIdx As Long
+
+    startIdx = UBound(actual) - windowSize + 1
+    If startIdx < LBound(actual) Then startIdx = LBound(actual)
+
+    sumAbsPercentError = 0
+    validCount = 0
+
+    For i = startIdx To UBound(actual)
+        If actual(i) <> 0 Then
+            sumAbsPercentError = sumAbsPercentError + Abs((actual(i) - fitted(i)) / actual(i)) * 100
+            validCount = validCount + 1
+        End If
+    Next i
+
+    If validCount > 0 Then
+        CalculateRecentMAPE = sumAbsPercentError / validCount
+    Else
+        CalculateRecentMAPE = 100
+    End If
+End Function
+

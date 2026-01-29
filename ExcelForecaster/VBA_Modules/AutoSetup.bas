@@ -412,9 +412,9 @@ Private Function GetUserFormCode() As String
     code = code & "Private Sub btnAnalyze_Click()" & vbCrLf
     code = code & "    On Error GoTo ErrHandler" & vbCrLf
     code = code & "    If IsEmpty(tsData.Values) Then MsgBox ""Load data first"", vbExclamation: Exit Sub" & vbCrLf
-    code = code & "    lblStatus.Caption = ""Analyzing (testing 6 models)..."": DoEvents" & vbCrLf
+    code = code & "    lblStatus.Caption = ""Analyzing (testing 10 advanced models)..."": DoEvents" & vbCrLf
     code = code & "    Dim h As Integer: h = CInt(txtHorizon.Text)" & vbCrLf
-    code = code & "    ' AutoForecast tests SES, HW, Damped HW, Theta, Ensemble, and ARIMA - picks best MAPE" & vbCrLf
+    code = code & "    ' AutoForecast tests 10 methods: SES, HW, Damped HW, Theta, Ensemble, ARIMA, Croston, Auto-ARIMA, Advanced Ensemble, Alt-HW - picks best MAPE!" & vbCrLf
     code = code & "    Dim bestResult As ForecastResult" & vbCrLf
     code = code & "    bestResult = TimeSeriesAnalysis.AutoForecast(tsData, h, LCase(cboSeasonalType.Text))" & vbCrLf
     code = code & "    sesResult = bestResult  ' Store best result" & vbCrLf
