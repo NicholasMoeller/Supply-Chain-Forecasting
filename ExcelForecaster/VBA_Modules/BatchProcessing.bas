@@ -1095,11 +1095,14 @@ Private Sub GeneratePortfolioAnalysis()
     ' Write portfolio metrics to summary
     Call WritePortfolioMetrics(ws, portfolioMAPE, portfolioMAE, portfolioRMSE)
 
-    ' Create portfolio forecast chart
+    ' Create portfolio forecast chart (summary version)
     Call CreatePortfolioForecastChart(ws, portfolioActual, portfolioForecast, portfolioLower95, portfolioUpper95)
 
     ' Create portfolio forecast worksheet
     Call CreatePortfolioForecastSheet(portfolioActual, portfolioFitted, portfolioForecast, portfolioLower95, portfolioUpper95)
+
+    ' Generate comprehensive portfolio charts (all diagnostic charts like individual components)
+    Call ChartUtilities.GeneratePortfolioCharts(portfolioActual, portfolioFitted, portfolioForecast, portfolioLower95, portfolioUpper95)
 
     Exit Sub
 
