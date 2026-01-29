@@ -209,7 +209,7 @@ Public Sub ProcessAllComponents(frequency As Long, horizon As Long, seasonalType
     Call CalculateABCClassification
 
     ' Calculate portfolio-level metrics and create portfolio forecast chart
-    Call GeneratePortfolioAnalysis
+    Call GeneratePortfolioAnalysis(frequency, seasonalType)
 
     ' Create detailed diagnostics for worst/best components if requested
     If fullDiagnostics Then
@@ -988,7 +988,7 @@ End Sub
 ' Aggregate all components to calculate overall portfolio metrics and forecast
 ' ============================================================================
 
-Private Sub GeneratePortfolioAnalysis()
+Private Sub GeneratePortfolioAnalysis(frequency As Long, seasonalType As String)
     On Error GoTo ErrorHandler
 
     Dim ws As Worksheet
@@ -1101,8 +1101,18 @@ Private Sub GeneratePortfolioAnalysis()
     ' Create portfolio forecast worksheet
     Call CreatePortfolioForecastSheet(portfolioActual, portfolioFitted, portfolioForecast, portfolioLower95, portfolioUpper95)
 
-    ' Generate comprehensive portfolio charts (all diagnostic charts like individual components)
-    Call ChartUtilities.GeneratePortfolioCharts(portfolioActual, portfolioFitted, portfolioForecast, portfolioLower95, portfolioUpper95)
+    ' Calculate portfolio decomposition (seasonal analysis)
+    Dim portfolioTsData As TimeSeriesAnalysis.TimeSeriesData
+    portfolioTsData.Values = portfolioActual
+    portfolioTsData.Frequency = CInt(frequency)
+
+    Dim portfolioDecomp As TimeSeriesAnalysis.DecompositionResult
+    On Error Resume Next
+    portfolioDecomp = TimeSeriesAnalysis.Decompose(portfolioTsData, LCase(seasonalType))
+    On Error GoTo ErrorHandler
+
+    ' Generate comprehensive portfolio charts (all diagnostic + decomposition charts)
+    Call ChartUtilities.GeneratePortfolioCharts(portfolioActual, portfolioFitted, portfolioForecast, portfolioLower95, portfolioUpper95, portfolioDecomp)
 
     Exit Sub
 

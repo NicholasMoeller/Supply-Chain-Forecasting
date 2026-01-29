@@ -836,7 +836,8 @@ Public Sub GeneratePortfolioCharts(ByRef actual() As Double, _
                                    ByRef fitted() As Double, _
                                    ByRef forecast() As Double, _
                                    ByRef lower95() As Double, _
-                                   ByRef upper95() As Double)
+                                   ByRef upper95() As Double, _
+                                   ByRef decompResult As DecompositionResult)
 
     Dim ws As Worksheet
     Set ws = GetOrCreateSheet("PortfolioCharts")
@@ -883,6 +884,39 @@ Public Sub GeneratePortfolioCharts(ByRef actual() As Double, _
     Call CreateHistogramChart(ws, residuals, 10, diagTop2, 240, 180)
     Call CreateQQPlotChart(ws, residuals, 10 + 240 + 50, diagTop2, 240, 180)
     Call CreateLjungBoxDisplay(ws, residuals, 10 + 2 * (240 + 50), diagTop2, 240, 180)
+
+    ' Row 4: Seasonal Decomposition Charts
+    Dim decompTop As Double
+    decompTop = diagTop2 + 180 + 35 + spacing5cm  ' Previous row height + text + spacing
+
+    ' Check if decomposition was successful (has data)
+    On Error Resume Next
+    Dim hasDecomp As Boolean
+    hasDecomp = (UBound(decompResult.Observed) > 0)
+    On Error GoTo 0
+
+    If hasDecomp Then
+        ' Observed and Trend (top row of decomposition)
+        Call CreateSingleSeriesChart(ws, decompResult.Observed, "Observed (Portfolio)", _
+                                     10, decompTop, 240, 180, RGB(0, 0, 0))
+        Call CreateSingleSeriesChart(ws, decompResult.Trend, "Trend (Portfolio)", _
+                                     10 + 240 + 50, decompTop, 240, 180, RGB(68, 114, 196))
+
+        ' Seasonal and Random (bottom row of decomposition)
+        Dim decompTop2 As Double
+        decompTop2 = decompTop + 180 + 35 + 50  ' Chart height + text + smaller spacing
+
+        Call CreateSingleSeriesChart(ws, decompResult.Seasonal, "Seasonal (Portfolio)", _
+                                     10, decompTop2, 240, 180, RGB(0, 128, 0))
+        Call CreateSingleSeriesChart(ws, decompResult.Random, "Random (Portfolio)", _
+                                     10 + 240 + 50, decompTop2, 240, 180, RGB(255, 0, 0))
+
+        ' Add interpretation for decomposition
+        Call AddChartInterpretation(ws, _
+            "PORTFOLIO SEASONALITY: Observed = total portfolio demand. Trend (blue) = long-term direction. " & _
+            "Seasonal (green) = repeating pattern. Random (red) = noise (should be small).", _
+            10, decompTop2 + 190, 530)
+    End If
 
     ' Add title and explanation at the top
     Call AddPortfolioChartTitle(ws)
