@@ -9,6 +9,7 @@ End Type
 
 ' Forecast Result Type
 Public Type ForecastResult
+    ModelName As String         ' Name of the forecasting model used
     FittedValues() As Double
     ForecastValues() As Double
     Residuals() As Double
@@ -23,6 +24,7 @@ Public Type ForecastResult
     Alpha As Double
     Beta As Double
     Gamma As Double
+    Phi As Double              ' Damping parameter
 End Type
 
 ' Decomposition Result Type
@@ -106,6 +108,7 @@ Public Function SimpleExponentialSmoothing(ByRef tsData As TimeSeriesData, _
     result.RMSE = CalculateRMSE(result.Residuals)
     result.MBE = CalculateMBE(Values, result.FittedValues)
     result.Alpha = optimizedAlpha
+    result.ModelName = "SES"
 
     SimpleExponentialSmoothing = result
 End Function
@@ -300,6 +303,12 @@ Public Function HoltWinters(ByRef tsData As TimeSeriesData, _
     result.Alpha = optimizedAlpha
     result.Beta = optimizedBeta
     result.Gamma = optimizedGamma
+
+    If LCase(seasonalType) = "additive" Then
+        result.ModelName = "Holt-Winters (Additive)"
+    Else
+        result.ModelName = "Holt-Winters (Multiplicative)"
+    End If
 
     HoltWinters = result
 End Function
@@ -995,4 +1004,512 @@ Private Function NormalInverseCDF(ByVal p As Double) As Double
             NormalInverseCDF = result
         End If
     End If
+End Function
+
+' ============================================================================
+' ADVANCED FORECASTING METHODS - IMPROVED ACCURACY
+' ============================================================================
+
+' ============================================================================
+' AUTOMATIC MODEL SELECTION - Tries all methods and picks the best!
+' ============================================================================
+Public Function AutoForecast(ByRef tsData As TimeSeriesData, _
+                             ByVal horizon As Integer, _
+                             ByVal seasonalType As String) As ForecastResult
+    On Error GoTo ErrorHandler
+    
+    Dim results() As ForecastResult
+    Dim modelNames() As String
+    Dim modelCount As Integer
+    Dim i As Integer
+    Dim bestIndex As Integer
+    Dim bestMAPE As Double
+    Dim cleanedData As TimeSeriesData
+    
+    ' Clean outliers first for better accuracy
+    cleanedData = RemoveOutliers(tsData)
+    
+    ' Try all forecasting methods
+    modelCount = 6
+    ReDim results(1 To modelCount)
+    ReDim modelNames(1 To modelCount)
+    
+    ' 1. Simple Exponential Smoothing
+    On Error Resume Next
+    results(1) = SimpleExponentialSmoothing(cleanedData, horizon)
+    results(1).ModelName = "SES"
+    If Err.Number <> 0 Then results(1).MAPE = 9999
+    On Error GoTo ErrorHandler
+    
+    ' 2. Holt-Winters
+    On Error Resume Next
+    results(2) = HoltWinters(cleanedData, horizon, seasonalType)
+    results(2).ModelName = "Holt-Winters"
+    If Err.Number <> 0 Then results(2).MAPE = 9999
+    On Error GoTo ErrorHandler
+    
+    ' 3. Damped Trend Holt-Winters
+    On Error Resume Next
+    results(3) = DampedHoltWinters(cleanedData, horizon, seasonalType)
+    results(3).ModelName = "Damped HW"
+    If Err.Number <> 0 Then results(3).MAPE = 9999
+    On Error GoTo ErrorHandler
+    
+    ' 4. Theta Method
+    On Error Resume Next
+    results(4) = ThetaMethod(cleanedData, horizon)
+    results(4).ModelName = "Theta"
+    If Err.Number <> 0 Then results(4).MAPE = 9999
+    On Error GoTo ErrorHandler
+    
+    ' 5. Ensemble (SES + HW)
+    On Error Resume Next
+    results(5) = EnsembleForecast(cleanedData, horizon, seasonalType)
+    results(5).ModelName = "Ensemble"
+    If Err.Number <> 0 Then results(5).MAPE = 9999
+    On Error GoTo ErrorHandler
+    
+    ' 6. ARIMA
+    On Error Resume Next
+    results(6) = SimpleARIMA(cleanedData, horizon)
+    results(6).ModelName = "ARIMA"
+    If Err.Number <> 0 Then results(6).MAPE = 9999
+    On Error GoTo ErrorHandler
+    
+    ' Find best model (lowest MAPE)
+    bestMAPE = results(1).MAPE
+    bestIndex = 1
+    For i = 2 To modelCount
+        If results(i).MAPE < bestMAPE And results(i).MAPE > 0 Then
+            bestMAPE = results(i).MAPE
+            bestIndex = i
+        End If
+    Next i
+    
+    AutoForecast = results(bestIndex)
+    Exit Function
+    
+ErrorHandler:
+    ' If all fail, return SES
+    AutoForecast = SimpleExponentialSmoothing(tsData, horizon)
+    AutoForecast.ModelName = "SES (Fallback)"
+End Function
+
+' ============================================================================
+' ENSEMBLE FORECASTING - Combines SES + HW for better accuracy
+' ============================================================================
+Public Function EnsembleForecast(ByRef tsData As TimeSeriesData, _
+                                 ByVal horizon As Integer, _
+                                 ByVal seasonalType As String) As ForecastResult
+    Dim sesResult As ForecastResult
+    Dim hwResult As ForecastResult
+    Dim result As ForecastResult
+    Dim i As Long
+    Dim sesWeight As Double, hwWeight As Double
+    
+    ' Get forecasts from both methods
+    sesResult = SimpleExponentialSmoothing(tsData, horizon)
+    hwResult = HoltWinters(tsData, horizon, seasonalType)
+    
+    ' Weight by inverse MAPE (better model gets more weight)
+    If sesResult.MAPE > 0 And hwResult.MAPE > 0 Then
+        sesWeight = (1 / sesResult.MAPE) / ((1 / sesResult.MAPE) + (1 / hwResult.MAPE))
+        hwWeight = 1 - sesWeight
+    Else
+        sesWeight = 0.5
+        hwWeight = 0.5
+    End If
+    
+    ' Initialize result arrays
+    ReDim result.FittedValues(LBound(tsData.Values) To UBound(tsData.Values))
+    ReDim result.ForecastValues(1 To horizon)
+    ReDim result.Residuals(LBound(tsData.Values) To UBound(tsData.Values))
+    ReDim result.Lower95(1 To horizon)
+    ReDim result.Upper95(1 To horizon)
+    
+    ' Combine fitted values
+    For i = LBound(tsData.Values) To UBound(tsData.Values)
+        result.FittedValues(i) = sesWeight * sesResult.FittedValues(i) + hwWeight * hwResult.FittedValues(i)
+        result.Residuals(i) = tsData.Values(i) - result.FittedValues(i)
+    Next i
+    
+    ' Combine forecasts
+    For i = 1 To horizon
+        result.ForecastValues(i) = sesWeight * sesResult.ForecastValues(i) + hwWeight * hwResult.ForecastValues(i)
+        result.Lower95(i) = sesWeight * sesResult.Lower95(i) + hwWeight * hwResult.Lower95(i)
+        result.Upper95(i) = sesWeight * sesResult.Upper95(i) + hwWeight * hwResult.Upper95(i)
+    Next i
+    
+    ' Calculate metrics
+    result.MAPE = CalculateMAPE(tsData.Values, result.FittedValues)
+    result.MAE = CalculateMAE(tsData.Values, result.FittedValues)
+    result.RMSE = CalculateRMSE(tsData.Values, result.FittedValues)
+    result.MBE = CalculateMBE(result.Residuals)
+    result.ModelName = "Ensemble"
+    
+    EnsembleForecast = result
+End Function
+
+' ============================================================================
+' DAMPED TREND HOLT-WINTERS - Better for long-term forecasts
+' ============================================================================
+Public Function DampedHoltWinters(ByRef tsData As TimeSeriesData, _
+                                  ByVal horizon As Integer, _
+                                  ByVal seasonalType As String, _
+                                  Optional ByVal damping As Variant) As ForecastResult
+    Dim result As ForecastResult
+    Dim Values() As Double
+    Dim n As Long, i As Long, j As Long
+    Dim m As Integer
+    Dim level As Double, trend As Double
+    Dim seasonal() As Double
+    Dim phi As Double
+    Dim alpha As Double, beta As Double, gamma As Double
+    
+    Values = tsData.Values
+    n = UBound(Values) - LBound(Values) + 1
+    m = tsData.Frequency
+    
+    ' Use optimized damping parameter if not provided
+    If IsMissing(damping) Or IsEmpty(damping) Then
+        phi = 0.98  ' Typical value - dampens trend by 2% per period
+    Else
+        phi = CDbl(damping)
+    End If
+    
+    ' Optimize parameters (simplified - use good defaults)
+    alpha = 0.2
+    beta = 0.1
+    gamma = 0.1
+    
+    ' Initialize
+    ReDim result.FittedValues(LBound(Values) To UBound(Values))
+    ReDim result.Residuals(LBound(Values) To UBound(Values))
+    ReDim result.ForecastValues(1 To horizon)
+    ReDim result.Lower95(1 To horizon)
+    ReDim result.Upper95(1 To horizon)
+    ReDim seasonal(1 To m)
+    
+    ' Initial values
+    level = Values(LBound(Values))
+    trend = (Values(LBound(Values) + m) - Values(LBound(Values))) / m
+    
+    ' Initialize seasonal indices
+    For i = 1 To m
+        seasonal(i) = 1
+    Next i
+    
+    ' Fit model with damping
+    For i = LBound(Values) To UBound(Values)
+        Dim seasonalIndex As Integer
+        seasonalIndex = ((i - LBound(Values)) Mod m) + 1
+        
+        If LCase(seasonalType) = "multiplicative" Then
+            result.FittedValues(i) = (level + trend) * seasonal(seasonalIndex)
+            
+            Dim newLevel As Double
+            newLevel = alpha * (Values(i) / seasonal(seasonalIndex)) + (1 - alpha) * (level + phi * trend)
+            trend = beta * (newLevel - level) + (1 - beta) * phi * trend
+            seasonal(seasonalIndex) = gamma * (Values(i) / newLevel) + (1 - gamma) * seasonal(seasonalIndex)
+            level = newLevel
+        Else ' additive
+            result.FittedValues(i) = level + trend + seasonal(seasonalIndex)
+            
+            newLevel = alpha * (Values(i) - seasonal(seasonalIndex)) + (1 - alpha) * (level + phi * trend)
+            trend = beta * (newLevel - level) + (1 - beta) * phi * trend
+            seasonal(seasonalIndex) = gamma * (Values(i) - newLevel) + (1 - gamma) * seasonal(seasonalIndex)
+            level = newLevel
+        End If
+        
+        result.Residuals(i) = Values(i) - result.FittedValues(i)
+    Next i
+    
+    ' Forecast with damped trend
+    Dim cumulativePhi As Double
+    cumulativePhi = 0
+    For j = 1 To horizon
+        cumulativePhi = cumulativePhi + phi ^ j
+        seasonalIndex = ((j - 1) Mod m) + 1
+        
+        If LCase(seasonalType) = "multiplicative" Then
+            result.ForecastValues(j) = (level + cumulativePhi * trend) * seasonal(seasonalIndex)
+        Else
+            result.ForecastValues(j) = level + cumulativePhi * trend + seasonal(seasonalIndex)
+        End If
+    Next j
+    
+    ' Calculate confidence intervals
+    Dim residualStdDev As Double
+    residualStdDev = CalculateStdDev(result.Residuals)
+    
+    For i = 1 To horizon
+        Dim se As Double
+        se = residualStdDev * Sqr(i)
+        result.Lower95(i) = result.ForecastValues(i) - 1.96 * se
+        result.Upper95(i) = result.ForecastValues(i) + 1.96 * se
+    Next i
+    
+    ' Calculate metrics
+    result.MAPE = CalculateMAPE(Values, result.FittedValues)
+    result.MAE = CalculateMAE(Values, result.FittedValues)
+    result.RMSE = CalculateRMSE(Values, result.FittedValues)
+    result.MBE = CalculateMBE(result.Residuals)
+    result.Alpha = alpha
+    result.Beta = beta
+    result.Gamma = gamma
+    result.Phi = phi
+    result.ModelName = "Damped HW"
+    
+    DampedHoltWinters = result
+End Function
+
+' ============================================================================
+' THETA METHOD - Simple but often very accurate!
+' ============================================================================
+Public Function ThetaMethod(ByRef tsData As TimeSeriesData, _
+                            ByVal horizon As Integer) As ForecastResult
+    Dim result As ForecastResult
+    Dim Values() As Double
+    Dim n As Long, i As Long
+    Dim theta As Double
+    Dim line1() As Double, line2() As Double
+    Dim drift As Double
+    
+    Values = tsData.Values
+    n = UBound(Values) - LBound(Values) + 1
+    theta = 2  ' Classic Theta=2
+    
+    ' Initialize
+    ReDim result.FittedValues(LBound(Values) To UBound(Values))
+    ReDim result.Residuals(LBound(Values) To UBound(Values))
+    ReDim result.ForecastValues(1 To horizon)
+    ReDim result.Lower95(1 To horizon)
+    ReDim result.Upper95(1 To horizon)
+    ReDim line1(LBound(Values) To UBound(Values))
+    ReDim line2(LBound(Values) To UBound(Values))
+    
+    ' Line 1: SES (theta=0)
+    Dim sesResult As ForecastResult
+    sesResult = SimpleExponentialSmoothing(tsData, horizon)
+    
+    ' Line 2: Linear regression (theta=2)
+    ' Calculate drift
+    Dim sumX As Double, sumY As Double, sumXY As Double, sumX2 As Double
+    sumX = 0: sumY = 0: sumXY = 0: sumX2 = 0
+    
+    For i = LBound(Values) To UBound(Values)
+        Dim x As Double
+        x = i - LBound(Values) + 1
+        sumX = sumX + x
+        sumY = sumY + Values(i)
+        sumXY = sumXY + x * Values(i)
+        sumX2 = sumX2 + x * x
+    Next i
+    
+    drift = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX)
+    Dim intercept As Double
+    intercept = (sumY - drift * sumX) / n
+    
+    ' Combine lines (average of SES and linear trend)
+    For i = LBound(Values) To UBound(Values)
+        x = i - LBound(Values) + 1
+        line2(i) = intercept + drift * x
+        result.FittedValues(i) = (sesResult.FittedValues(i) + line2(i)) / 2
+        result.Residuals(i) = Values(i) - result.FittedValues(i)
+    Next i
+    
+    ' Forecast
+    For i = 1 To horizon
+        x = n + i
+        Dim sesForecast As Double
+        sesForecast = sesResult.ForecastValues(i)
+        Dim linearForecast As Double
+        linearForecast = intercept + drift * x
+        result.ForecastValues(i) = (sesForecast + linearForecast) / 2
+    Next i
+    
+    ' Calculate confidence intervals
+    Dim residualStdDev As Double
+    residualStdDev = CalculateStdDev(result.Residuals)
+    
+    For i = 1 To horizon
+        Dim se As Double
+        se = residualStdDev * Sqr(i)
+        result.Lower95(i) = result.ForecastValues(i) - 1.96 * se
+        result.Upper95(i) = result.ForecastValues(i) + 1.96 * se
+    Next i
+    
+    ' Calculate metrics
+    result.MAPE = CalculateMAPE(Values, result.FittedValues)
+    result.MAE = CalculateMAE(Values, result.FittedValues)
+    result.RMSE = CalculateRMSE(Values, result.FittedValues)
+    result.MBE = CalculateMBE(result.Residuals)
+    result.ModelName = "Theta"
+    
+    ThetaMethod = result
+End Function
+
+' ============================================================================
+' SIMPLE ARIMA - Simplified Auto-Regressive Integrated Moving Average
+' ============================================================================
+Public Function SimpleARIMA(ByRef tsData As TimeSeriesData, _
+                            ByVal horizon As Integer) As ForecastResult
+    Dim result As ForecastResult
+    Dim Values() As Double
+    Dim diffValues() As Double
+    Dim n As Long, i As Long
+    Dim ar1 As Double  ' AR(1) coefficient
+    
+    Values = tsData.Values
+    n = UBound(Values) - LBound(Values) + 1
+    
+    ' First differencing to make stationary
+    ReDim diffValues(LBound(Values) + 1 To UBound(Values))
+    For i = LBound(Values) + 1 To UBound(Values)
+        diffValues(i) = Values(i) - Values(i - 1)
+    Next i
+    
+    ' Estimate AR(1) coefficient using Yule-Walker
+    Dim mean As Double
+    Dim sumDiff As Double
+    sumDiff = 0
+    For i = LBound(diffValues) To UBound(diffValues)
+        sumDiff = sumDiff + diffValues(i)
+    Next i
+    mean = sumDiff / (UBound(diffValues) - LBound(diffValues) + 1)
+    
+    Dim gamma0 As Double, gamma1 As Double
+    gamma0 = 0: gamma1 = 0
+    For i = LBound(diffValues) To UBound(diffValues)
+        gamma0 = gamma0 + (diffValues(i) - mean) ^ 2
+        If i < UBound(diffValues) Then
+            gamma1 = gamma1 + (diffValues(i) - mean) * (diffValues(i + 1) - mean)
+        End If
+    Next i
+    
+    If gamma0 > 0 Then
+        ar1 = gamma1 / gamma0
+    Else
+        ar1 = 0
+    End If
+    
+    ' Ensure stability
+    If ar1 >= 1 Then ar1 = 0.95
+    If ar1 <= -1 Then ar1 = -0.95
+    
+    ' Initialize result
+    ReDim result.FittedValues(LBound(Values) To UBound(Values))
+    ReDim result.Residuals(LBound(Values) To UBound(Values))
+    ReDim result.ForecastValues(1 To horizon)
+    ReDim result.Lower95(1 To horizon)
+    ReDim result.Upper95(1 To horizon)
+    
+    ' Fit values
+    result.FittedValues(LBound(Values)) = Values(LBound(Values))
+    For i = LBound(Values) + 1 To UBound(Values)
+        result.FittedValues(i) = Values(i - 1) + ar1 * (Values(i - 1) - Values(i - 2))
+        result.Residuals(i) = Values(i) - result.FittedValues(i)
+    Next i
+    result.Residuals(LBound(Values)) = 0
+    
+    ' Forecast
+    Dim lastValue As Double
+    Dim lastDiff As Double
+    lastValue = Values(UBound(Values))
+    lastDiff = diffValues(UBound(diffValues))
+    
+    For i = 1 To horizon
+        Dim forecastDiff As Double
+        forecastDiff = ar1 ^ i * lastDiff
+        result.ForecastValues(i) = lastValue + forecastDiff * i
+    Next i
+    
+    ' Calculate confidence intervals
+    Dim residualStdDev As Double
+    residualStdDev = CalculateStdDev(result.Residuals)
+    
+    For i = 1 To horizon
+        Dim se As Double
+        se = residualStdDev * Sqr(i)
+        result.Lower95(i) = result.ForecastValues(i) - 1.96 * se
+        result.Upper95(i) = result.ForecastValues(i) + 1.96 * se
+    Next i
+    
+    ' Calculate metrics
+    result.MAPE = CalculateMAPE(Values, result.FittedValues)
+    result.MAE = CalculateMAE(Values, result.FittedValues)
+    result.RMSE = CalculateRMSE(Values, result.FittedValues)
+    result.MBE = CalculateMBE(result.Residuals)
+    result.Alpha = ar1  ' Store AR coefficient in Alpha field
+    result.ModelName = "ARIMA(1,1,0)"
+    
+    SimpleARIMA = result
+End Function
+
+' ============================================================================
+' OUTLIER DETECTION AND REMOVAL - Clean your data first!
+' ============================================================================
+Public Function RemoveOutliers(ByRef tsData As TimeSeriesData) As TimeSeriesData
+    Dim result As TimeSeriesData
+    Dim Values() As Double
+    Dim cleanValues() As Double
+    Dim n As Long, i As Long
+    Dim q1 As Double, q3 As Double, iqr As Double
+    Dim lowerBound As Double, upperBound As Double
+    Dim sorted() As Double
+    
+    Values = tsData.Values
+    n = UBound(Values) - LBound(Values) + 1
+    
+    ' Copy to sorted array
+    ReDim sorted(LBound(Values) To UBound(Values))
+    For i = LBound(Values) To UBound(Values)
+        sorted(i) = Values(i)
+    Next i
+    
+    ' Simple bubble sort
+    Dim temp As Double
+    Dim j As Long
+    For i = LBound(sorted) To UBound(sorted) - 1
+        For j = i + 1 To UBound(sorted)
+            If sorted(i) > sorted(j) Then
+                temp = sorted(i)
+                sorted(i) = sorted(j)
+                sorted(j) = temp
+            End If
+        Next j
+    Next i
+    
+    ' Calculate Q1 and Q3
+    Dim q1Pos As Long, q3Pos As Long
+    q1Pos = LBound(sorted) + Int(n * 0.25)
+    q3Pos = LBound(sorted) + Int(n * 0.75)
+    q1 = sorted(q1Pos)
+    q3 = sorted(q3Pos)
+    iqr = q3 - q1
+    
+    ' Calculate bounds (1.5 * IQR is standard outlier detection)
+    lowerBound = q1 - 1.5 * iqr
+    upperBound = q3 + 1.5 * iqr
+    
+    ' Replace outliers with interpolated values
+    ReDim cleanValues(LBound(Values) To UBound(Values))
+    For i = LBound(Values) To UBound(Values)
+        If Values(i) < lowerBound Or Values(i) > upperBound Then
+            ' Interpolate from neighbors
+            If i = LBound(Values) Then
+                cleanValues(i) = Values(i + 1)
+            ElseIf i = UBound(Values) Then
+                cleanValues(i) = Values(i - 1)
+            Else
+                cleanValues(i) = (Values(i - 1) + Values(i + 1)) / 2
+            End If
+        Else
+            cleanValues(i) = Values(i)
+        End If
+    Next i
+    
+    result.Values = cleanValues
+    result.Frequency = tsData.Frequency
+    RemoveOutliers = result
 End Function

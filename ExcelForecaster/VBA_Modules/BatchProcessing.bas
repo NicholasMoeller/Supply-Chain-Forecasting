@@ -233,12 +233,13 @@ Private Sub ProcessSingleComponent(componentName As String, data() As Double, _
                                    resultIndex As Long)
     On Error GoTo ErrorHandler
 
-    ' FIX: Use correct type names
+    ' Use AutoForecast to test all 6 models and pick the best
+    Dim bestResult As TimeSeriesAnalysis.ForecastResult
     Dim sesResult As TimeSeriesAnalysis.ForecastResult
     Dim hwResult As TimeSeriesAnalysis.ForecastResult
     Dim summary As ComponentSummary
 
-    ' FIX: Create TimeSeriesData structure
+    ' Create TimeSeriesData structure
     Dim tsData As TimeSeriesAnalysis.TimeSeriesData
     tsData.Values = data
     tsData.Frequency = CInt(frequency)
@@ -267,34 +268,30 @@ Private Sub ProcessSingleComponent(componentName As String, data() As Double, _
         GoTo StoreResults
     End If
 
-    ' FIX: Use correct function name and signature
-    ' Run SES
-    sesResult = TimeSeriesAnalysis.SimpleExponentialSmoothing(tsData, CInt(horizon))
-    summary.SES_Alpha = sesResult.Alpha
-    summary.SES_MAPE = sesResult.MAPE
-    summary.SES_MAE = sesResult.MAE
-    summary.SES_RMSE = sesResult.RMSE
-    summary.SES_MBE = sesResult.MBE
+    ' AutoForecast tests: SES, HW, Damped HW, Theta, Ensemble, and ARIMA - picks best MAPE
+    bestResult = TimeSeriesAnalysis.AutoForecast(tsData, CInt(horizon), seasonalType)
 
-    ' FIX: Use correct function name "HoltWinters" not "HoltWintersMethod"
-    ' Run Holt-Winters
-    hwResult = TimeSeriesAnalysis.HoltWinters(tsData, CInt(horizon), seasonalType)
-    summary.HW_Alpha = hwResult.Alpha
-    summary.HW_Beta = hwResult.Beta
-    summary.HW_Gamma = hwResult.Gamma
-    summary.HW_MAPE = hwResult.MAPE
-    summary.HW_MAE = hwResult.MAE
-    summary.HW_RMSE = hwResult.RMSE
-    summary.HW_MBE = hwResult.MBE
+    ' Store best result
+    sesResult = bestResult
+    hwResult = bestResult
 
-    ' Determine best model
-    If summary.SES_MAPE < summary.HW_MAPE Then
-        summary.BestModel = "SES"
-        summary.BestMAPE = summary.SES_MAPE
-    Else
-        summary.BestModel = "HW"
-        summary.BestMAPE = summary.HW_MAPE
-    End If
+    ' Fill summary with best model results
+    summary.SES_Alpha = bestResult.Alpha
+    summary.SES_MAPE = bestResult.MAPE
+    summary.SES_MAE = bestResult.MAE
+    summary.SES_RMSE = bestResult.RMSE
+    summary.SES_MBE = bestResult.MBE
+    summary.HW_Alpha = bestResult.Alpha
+    summary.HW_Beta = bestResult.Beta
+    summary.HW_Gamma = bestResult.Gamma
+    summary.HW_MAPE = bestResult.MAPE
+    summary.HW_MAE = bestResult.MAE
+    summary.HW_RMSE = bestResult.RMSE
+    summary.HW_MBE = bestResult.MBE
+
+    ' Store which model was selected
+    summary.BestModel = bestResult.ModelName
+    summary.BestMAPE = bestResult.MAPE
 
     ' Classify accuracy
     If summary.BestMAPE < 10 Then

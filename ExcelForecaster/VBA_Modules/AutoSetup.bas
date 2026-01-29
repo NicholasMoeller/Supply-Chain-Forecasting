@@ -412,14 +412,17 @@ Private Function GetUserFormCode() As String
     code = code & "Private Sub btnAnalyze_Click()" & vbCrLf
     code = code & "    On Error GoTo ErrHandler" & vbCrLf
     code = code & "    If IsEmpty(tsData.Values) Then MsgBox ""Load data first"", vbExclamation: Exit Sub" & vbCrLf
-    code = code & "    lblStatus.Caption = ""Analyzing..."": DoEvents" & vbCrLf
+    code = code & "    lblStatus.Caption = ""Analyzing (testing 6 models)..."": DoEvents" & vbCrLf
     code = code & "    Dim h As Integer: h = CInt(txtHorizon.Text)" & vbCrLf
-    code = code & "    sesResult = TimeSeriesAnalysis.SimpleExponentialSmoothing(tsData, h)" & vbCrLf
-    code = code & "    hwResult = TimeSeriesAnalysis.HoltWinters(tsData, h, LCase(cboSeasonalType.Text))" & vbCrLf
+    code = code & "    ' AutoForecast tests SES, HW, Damped HW, Theta, Ensemble, and ARIMA - picks best MAPE" & vbCrLf
+    code = code & "    Dim bestResult As ForecastResult" & vbCrLf
+    code = code & "    bestResult = TimeSeriesAnalysis.AutoForecast(tsData, h, LCase(cboSeasonalType.Text))" & vbCrLf
+    code = code & "    sesResult = bestResult  ' Store best result" & vbCrLf
+    code = code & "    hwResult = bestResult   ' Store best result" & vbCrLf
     code = code & "    decompResult = TimeSeriesAnalysis.Decompose(tsData, LCase(cboSeasonalType.Text))" & vbCrLf
     code = code & "    Call MainModule.DisplayAllResults(tsData, sesResult, hwResult, decompResult)" & vbCrLf
     code = code & "    lblStatus.Caption = ""Complete!"": lblStatus.ForeColor = RGB(0,128,0)" & vbCrLf
-    code = code & "    MsgBox ""Analysis complete! Check result sheets."", vbInformation" & vbCrLf
+    code = code & "    MsgBox ""Best Model: "" & bestResult.ModelName & vbCrLf & ""MAPE: "" & Format(bestResult.MAPE, ""0.00"") & ""%"" & vbCrLf & vbCrLf & ""Check result sheets for details."", vbInformation, ""Analysis Complete""" & vbCrLf
     code = code & "    Exit Sub" & vbCrLf
     code = code & "ErrHandler: MsgBox Err.Description, vbCritical" & vbCrLf
     code = code & "End Sub" & vbCrLf & vbCrLf
