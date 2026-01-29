@@ -1142,11 +1142,11 @@ Public Function EnsembleForecast(ByRef tsData As TimeSeriesData, _
     
     ' Calculate metrics
     result.MAPE = CalculateMAPE(tsData.Values, result.FittedValues)
-    result.MAE = CalculateMAE(tsData.Values, result.FittedValues)
-    result.RMSE = CalculateRMSE(tsData.Values, result.FittedValues)
-    result.MBE = CalculateMBE(result.Residuals)
+    result.MAE = CalculateMAE(result.Residuals)
+    result.RMSE = CalculateRMSE(result.Residuals)
+    result.MBE = CalculateMBE(tsData.Values, result.FittedValues)
     result.ModelName = "Ensemble"
-    
+
     EnsembleForecast = result
 End Function
 
@@ -1251,15 +1251,15 @@ Public Function DampedHoltWinters(ByRef tsData As TimeSeriesData, _
     
     ' Calculate metrics
     result.MAPE = CalculateMAPE(Values, result.FittedValues)
-    result.MAE = CalculateMAE(Values, result.FittedValues)
-    result.RMSE = CalculateRMSE(Values, result.FittedValues)
-    result.MBE = CalculateMBE(result.Residuals)
+    result.MAE = CalculateMAE(result.Residuals)
+    result.RMSE = CalculateRMSE(result.Residuals)
+    result.MBE = CalculateMBE(Values, result.FittedValues)
     result.Alpha = alpha
     result.Beta = beta
     result.Gamma = gamma
     result.Phi = phi
     result.ModelName = "Damped HW"
-    
+
     DampedHoltWinters = result
 End Function
 
@@ -1341,11 +1341,11 @@ Public Function ThetaMethod(ByRef tsData As TimeSeriesData, _
     
     ' Calculate metrics
     result.MAPE = CalculateMAPE(Values, result.FittedValues)
-    result.MAE = CalculateMAE(Values, result.FittedValues)
-    result.RMSE = CalculateRMSE(Values, result.FittedValues)
-    result.MBE = CalculateMBE(result.Residuals)
+    result.MAE = CalculateMAE(result.Residuals)
+    result.RMSE = CalculateRMSE(result.Residuals)
+    result.MBE = CalculateMBE(Values, result.FittedValues)
     result.ModelName = "Theta"
-    
+
     ThetaMethod = result
 End Function
 
@@ -1437,12 +1437,12 @@ Public Function SimpleARIMA(ByRef tsData As TimeSeriesData, _
     
     ' Calculate metrics
     result.MAPE = CalculateMAPE(Values, result.FittedValues)
-    result.MAE = CalculateMAE(Values, result.FittedValues)
-    result.RMSE = CalculateRMSE(Values, result.FittedValues)
-    result.MBE = CalculateMBE(result.Residuals)
+    result.MAE = CalculateMAE(result.Residuals)
+    result.RMSE = CalculateRMSE(result.Residuals)
+    result.MBE = CalculateMBE(Values, result.FittedValues)
     result.Alpha = ar1  ' Store AR coefficient in Alpha field
     result.ModelName = "ARIMA(1,1,0)"
-    
+
     SimpleARIMA = result
 End Function
 
