@@ -46,6 +46,11 @@ Public Type ComponentSummary
     ForecastValueAdd As Double ' Improvement over naive (%)
     BiasDirection As String ' "Over-forecasting", "Under-forecasting", "Unbiased"
     BiasAmount As Double ' Mean bias error
+
+    ' NEW: Historical Backtesting
+    BacktestMAPE As Double ' Average MAPE from historical backtests
+    BacktestCount As Integer ' Number of backtest origins tested
+    BacktestReliability As String ' "✓ Consistent", "~ Variable", "✗ Unstable"
 End Type
 
 ' Global array to store all component results
@@ -346,6 +351,9 @@ Private Sub ProcessSingleComponent(componentName As String, data() As Double, _
     End If
     summary.BiasAmount = bestResult.MBE
 
+    ' NEW: Perform Historical Backtesting
+    Call PerformBacktest(data, CInt(frequency), seasonalType, summary.BacktestMAPE, summary.BacktestCount, summary.BacktestReliability)
+
     ' NEW: Quality Flags & Warnings
     Dim warnings As String
     warnings = ""
@@ -455,15 +463,20 @@ Private Sub CreateSummaryWorksheet()
     ws.Cells(1, 26).Value = "Bias Direction"
     ws.Cells(1, 27).Value = "Bias Amount"
 
+    ' NEW: Historical Backtest Headers
+    ws.Cells(1, 28).Value = "Backtest MAPE (%)"
+    ws.Cells(1, 29).Value = "Backtest Origins"
+    ws.Cells(1, 30).Value = "Reliability"
+
     ' Format headers
-    With ws.Range("A1:AA1")
+    With ws.Range("A1:AD1")
         .Font.Bold = True
         .Interior.Color = RGB(68, 114, 196)
         .Font.Color = RGB(255, 255, 255)
         .HorizontalAlignment = xlCenter
     End With
 
-    ws.Columns("A:AA").AutoFit
+    ws.Columns("A:AD").AutoFit
 End Sub
 
 ' ============================================================================
@@ -516,6 +529,26 @@ Private Sub WriteSummaryRow(rowIndex As Long, summary As ComponentSummary)
     ws.Cells(row, 25).Value = summary.ForecastValueAdd
     ws.Cells(row, 26).Value = summary.BiasDirection
     ws.Cells(row, 27).Value = summary.BiasAmount
+
+    ' NEW: Historical Backtest Results
+    If summary.BacktestCount > 0 Then
+        ws.Cells(row, 28).Value = summary.BacktestMAPE
+        ws.Cells(row, 29).Value = summary.BacktestCount
+        ws.Cells(row, 30).Value = summary.BacktestReliability
+
+        ' Color code reliability
+        If summary.BacktestReliability = "✓ Consistent" Then
+            ws.Cells(row, 30).Interior.Color = RGB(146, 208, 80) ' Green
+        ElseIf summary.BacktestReliability = "~ Variable" Then
+            ws.Cells(row, 30).Interior.Color = RGB(255, 217, 102) ' Yellow
+        ElseIf summary.BacktestReliability = "✗ Unstable" Then
+            ws.Cells(row, 30).Interior.Color = RGB(255, 192, 203) ' Pink
+        End If
+    Else
+        ws.Cells(row, 28).Value = "N/A"
+        ws.Cells(row, 29).Value = "N/A"
+        ws.Cells(row, 30).Value = "N/A"
+    End If
 
     ' Color code quality flag
     If summary.QualityFlag = "🟢 GOOD" Then
@@ -1139,33 +1172,114 @@ Private Sub GeneratePortfolioAnalysis(frequency As Long, seasonalType As String)
         portfolioActual(i) = totalActual
     Next i
 
-    ' NOW USE AUTOFORECAST ON PORTFOLIO DATA - TEST ALL 10 MODELS!
-    ' This optimizes the portfolio forecast instead of just summing components
+    ' ===== HIERARCHICAL FORECAST RECONCILIATION =====
+    ' Calculate BOTH independent portfolio forecast AND sum of component forecasts
+    ' Then use optimal reconciliation to ensure consistency
+
+    ' 1. Calculate sum of component forecasts (bottom-up)
+    Dim bottomUpForecast() As Double
+    Dim bottomUpFitted() As Double
+    ReDim bottomUpForecast(1 To PortfolioHorizon)
+    ReDim bottomUpFitted(1 To lastRow - 1)
+
+    ' Sum component fitted values
+    For i = 1 To lastRow - 1
+        totalFitted = 0
+        For j = 1 To ComponentCount
+            If Not ComponentResults(j).HasError Then
+                If i <= UBound(ComponentResults(j).result.FittedValues) Then
+                    totalFitted = totalFitted + ComponentResults(j).result.FittedValues(i)
+                End If
+            End If
+        Next j
+        bottomUpFitted(i) = totalFitted
+    Next i
+
+    ' Sum component forecasts
+    For i = 1 To PortfolioHorizon
+        Dim totalForecast As Double
+        totalForecast = 0
+        For j = 1 To ComponentCount
+            If Not ComponentResults(j).HasError Then
+                If i <= UBound(ComponentResults(j).result.ForecastValues) Then
+                    totalForecast = totalForecast + ComponentResults(j).result.ForecastValues(i)
+                End If
+            End If
+        Next j
+        bottomUpForecast(i) = totalForecast
+    Next i
+
+    ' 2. Calculate independent portfolio forecast (top-down)
     Dim portfolioTsData As TimeSeriesAnalysis.TimeSeriesData
     portfolioTsData.Values = portfolioActual
     portfolioTsData.Frequency = CInt(frequency)
 
-    Dim portfolioResult As TimeSeriesAnalysis.ForecastResult
+    Dim topDownResult As TimeSeriesAnalysis.ForecastResult
     On Error Resume Next
-    portfolioResult = TimeSeriesAnalysis.AutoForecast(portfolioTsData, CInt(PortfolioHorizon), LCase(seasonalType))
+    topDownResult = TimeSeriesAnalysis.AutoForecast(portfolioTsData, CInt(PortfolioHorizon), LCase(seasonalType))
     On Error GoTo ErrorHandler
 
-    ' Use the winning model's fitted values and forecasts
-    portfolioFitted = portfolioResult.FittedValues
+    ' 3. Calculate historical accuracy of both approaches
+    Dim bottomUpMAPE As Double
+    Dim topDownMAPE As Double
 
-    For i = 1 To PortfolioHorizon
-        portfolioForecast(i) = portfolioResult.ForecastValues(i)
-        portfolioLower95(i) = portfolioResult.Lower95(i)
-        portfolioUpper95(i) = portfolioResult.Upper95(i)
+    bottomUpMAPE = CalculateHistoricalMAPE(portfolioActual, bottomUpFitted)
+    topDownMAPE = topDownResult.MAPE
+
+    ' 4. Optimal reconciliation: weight by inverse MAPE
+    Dim bottomUpWeight As Double
+    Dim topDownWeight As Double
+    Dim totalWeight As Double
+
+    If bottomUpMAPE > 0 And topDownMAPE > 0 Then
+        bottomUpWeight = 1 / bottomUpMAPE
+        topDownWeight = 1 / topDownMAPE
+        totalWeight = bottomUpWeight + topDownWeight
+        bottomUpWeight = bottomUpWeight / totalWeight
+        topDownWeight = topDownWeight / totalWeight
+    Else
+        ' Fallback: equal weights
+        bottomUpWeight = 0.5
+        topDownWeight = 0.5
+    End If
+
+    ' 5. Apply optimal combination for fitted values and forecasts
+    For i = 1 To lastRow - 1
+        portfolioFitted(i) = bottomUpWeight * bottomUpFitted(i) + topDownWeight * topDownResult.FittedValues(i)
     Next i
 
-    ' Portfolio metrics from the winning model
-    portfolioMAPE = portfolioResult.MAPE
-    portfolioMAE = portfolioResult.MAE
-    portfolioRMSE = portfolioResult.RMSE
+    For i = 1 To PortfolioHorizon
+        portfolioForecast(i) = bottomUpWeight * bottomUpForecast(i) + topDownWeight * topDownResult.ForecastValues(i)
+        ' Confidence intervals from top-down model (more conservative)
+        portfolioLower95(i) = topDownResult.Lower95(i)
+        portfolioUpper95(i) = topDownResult.Upper95(i)
+    Next i
+
+    ' Recalculate portfolio metrics on reconciled forecast
+    sumAbsError = 0
+    sumAbsPercentError = 0
+    sumSquaredError = 0
+    validPoints = 0
+
+    For i = 1 To lastRow - 1
+        If portfolioActual(i) <> 0 Then
+            error = portfolioActual(i) - portfolioFitted(i)
+            sumAbsError = sumAbsError + Abs(error)
+            sumAbsPercentError = sumAbsPercentError + Abs(error / portfolioActual(i)) * 100
+            sumSquaredError = sumSquaredError + error * error
+            validPoints = validPoints + 1
+        End If
+    Next i
+
+    If validPoints > 0 Then
+        portfolioMAPE = sumAbsPercentError / validPoints
+        portfolioMAE = sumAbsError / validPoints
+        portfolioRMSE = Sqr(sumSquaredError / validPoints)
+    End If
 
     Dim portfolioBestModel As String
-    portfolioBestModel = portfolioResult.ModelName
+    portfolioBestModel = "Reconciled: " & Format(bottomUpWeight * 100, "0") & "% BottomUp + " & _
+                        Format(topDownWeight * 100, "0") & "% TopDown(" & topDownResult.ModelName & ")"
 
     ' Write portfolio metrics to summary
     Call WritePortfolioMetrics(ws, portfolioMAPE, portfolioMAE, portfolioRMSE, portfolioBestModel)
@@ -1417,3 +1531,168 @@ Private Function CalculateSeasonalNaiveMAPE(ByRef data() As Double, frequency As
         CalculateSeasonalNaiveMAPE = 9999
     End If
 End Function
+
+Private Function CalculateHistoricalMAPE(ByRef actual() As Double, ByRef fitted() As Double) As Double
+    ' Calculate MAPE between actual and fitted values
+    Dim i As Long
+    Dim sumAbsPercentError As Double
+    Dim validCount As Long
+
+    sumAbsPercentError = 0
+    validCount = 0
+
+    For i = LBound(actual) To UBound(actual)
+        If i <= UBound(fitted) Then
+            If actual(i) <> 0 Then
+                sumAbsPercentError = sumAbsPercentError + Abs((actual(i) - fitted(i)) / actual(i)) * 100
+                validCount = validCount + 1
+            End If
+        End If
+    Next i
+
+    If validCount > 0 Then
+        CalculateHistoricalMAPE = sumAbsPercentError / validCount
+    Else
+        CalculateHistoricalMAPE = 9999
+    End If
+End Function
+
+Private Sub PerformBacktest(ByRef data() As Double, _
+                           ByVal frequency As Integer, _
+                           ByVal seasonalType As String, _
+                           ByRef backtestMAPE As Double, _
+                           ByRef backtestCount As Integer, _
+                           ByRef reliability As String)
+    ' Perform historical forecast backtesting
+    ' Tests forecast accuracy at multiple points in history
+    ' Returns average MAPE and reliability assessment
+
+    Dim n As Long
+    Dim testHorizon As Integer
+    Dim numOrigins As Integer
+    Dim originStep As Integer
+    Dim minTrainSize As Long
+    Dim origin As Integer
+    Dim i As Long, j As Long
+
+    Dim trainData() As Double
+    Dim testData() As Double
+    Dim tsData As TimeSeriesAnalysis.TimeSeriesData
+    Dim forecastResult As TimeSeriesAnalysis.ForecastResult
+
+    Dim backtestMAPEs() As Double
+    Dim validBacktests As Integer
+    Dim sumMAPE As Double
+    Dim mapeStdDev As Double
+    Dim meanMAPE As Double
+    Dim mapeVariance As Double
+
+    n = UBound(data) - LBound(data) + 1
+    testHorizon = WorksheetFunction.Min(6, Int(n * 0.15)) ' Test 15% or max 6 periods
+    If testHorizon < 1 Then testHorizon = 1
+
+    minTrainSize = WorksheetFunction.Max(frequency * 3, 20) ' Need at least 3 cycles or 20 points
+    numOrigins = WorksheetFunction.Min(5, Int((n - minTrainSize) / testHorizon)) ' Max 5 origins
+
+    If numOrigins < 2 Then
+        ' Not enough data for meaningful backtest
+        backtestMAPE = 0
+        backtestCount = 0
+        reliability = "N/A"
+        Exit Sub
+    End If
+
+    ReDim backtestMAPEs(1 To numOrigins)
+    validBacktests = 0
+    sumMAPE = 0
+
+    ' Test forecasts at multiple historical origins
+    originStep = Int((n - minTrainSize - testHorizon) / numOrigins)
+    If originStep < 1 Then originStep = 1
+
+    For origin = 1 To numOrigins
+        Dim trainEnd As Long
+        trainEnd = minTrainSize + (origin - 1) * originStep
+
+        If trainEnd + testHorizon > n Then Exit For
+
+        ' Extract training data
+        ReDim trainData(1 To trainEnd)
+        For i = 1 To trainEnd
+            trainData(i) = data(LBound(data) + i - 1)
+        Next i
+
+        ' Extract test data
+        ReDim testData(1 To testHorizon)
+        For i = 1 To testHorizon
+            If trainEnd + i <= n Then
+                testData(i) = data(LBound(data) + trainEnd + i - 1)
+            End If
+        Next i
+
+        ' Generate forecast
+        tsData.Values = trainData
+        tsData.Frequency = frequency
+
+        On Error Resume Next
+        forecastResult = TimeSeriesAnalysis.AutoForecast(tsData, testHorizon, LCase(seasonalType))
+        On Error GoTo 0
+
+        ' Calculate MAPE on test set
+        Dim originMAPE As Double
+        Dim sumAbsPercentError As Double
+        Dim validPoints As Long
+
+        sumAbsPercentError = 0
+        validPoints = 0
+
+        For i = 1 To testHorizon
+            If i <= UBound(testData) And testData(i) <> 0 And i <= UBound(forecastResult.ForecastValues) Then
+                sumAbsPercentError = sumAbsPercentError + Abs((testData(i) - forecastResult.ForecastValues(i)) / testData(i)) * 100
+                validPoints = validPoints + 1
+            End If
+        Next i
+
+        If validPoints > 0 Then
+            originMAPE = sumAbsPercentError / validPoints
+            validBacktests = validBacktests + 1
+            backtestMAPEs(validBacktests) = originMAPE
+            sumMAPE = sumMAPE + originMAPE
+        End If
+    Next origin
+
+    If validBacktests > 0 Then
+        ' Calculate average MAPE
+        meanMAPE = sumMAPE / validBacktests
+        backtestMAPE = meanMAPE
+        backtestCount = validBacktests
+
+        ' Calculate standard deviation to assess reliability
+        mapeVariance = 0
+        For i = 1 To validBacktests
+            mapeVariance = mapeVariance + (backtestMAPEs(i) - meanMAPE) ^ 2
+        Next i
+        mapeStdDev = Sqr(mapeVariance / validBacktests)
+
+        ' Assess reliability based on coefficient of variation
+        Dim cv As Double
+        If meanMAPE > 0 Then
+            cv = mapeStdDev / meanMAPE
+        Else
+            cv = 0
+        End If
+
+        ' Classify reliability
+        If cv < 0.2 Then
+            reliability = "✓ Consistent" ' Low variation, highly reliable
+        ElseIf cv < 0.5 Then
+            reliability = "~ Variable" ' Moderate variation
+        Else
+            reliability = "✗ Unstable" ' High variation, unreliable
+        End If
+    Else
+        backtestMAPE = 0
+        backtestCount = 0
+        reliability = "N/A"
+    End If
+End Sub

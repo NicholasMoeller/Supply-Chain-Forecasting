@@ -115,17 +115,21 @@ End Function
 
 Private Function OptimizeAlphaSES(ByRef Values() As Double) As Double
     Dim bestAlpha As Double
-    Dim bestSSE As Double
+    Dim bestMAPE As Double
     Dim currentAlpha As Double
-    Dim currentSSE As Double
+    Dim cvResult As CrossValidationResult
+    Dim numFolds As Integer
 
     bestAlpha = 0.1
-    bestSSE = 1E+100
+    bestMAPE = 1E+100
+
+    ' Use 3-fold cross-validation for robust parameter selection
+    numFolds = 3
 
     For currentAlpha = 0.01 To 0.99 Step 0.01
-        currentSSE = CalculateSSE_SES(Values, currentAlpha)
-        If currentSSE < bestSSE Then
-            bestSSE = currentSSE
+        cvResult = CrossValidateSES(Values, currentAlpha, numFolds)
+        If cvResult.AvgMAPE < bestMAPE Then
+            bestMAPE = cvResult.AvgMAPE
             bestAlpha = currentAlpha
         End If
     Next currentAlpha
@@ -317,22 +321,26 @@ Private Function OptimizeHoltWinters(ByRef Values() As Double, _
                                     ByVal Frequency As Integer, _
                                     ByVal seasonalType As String) As Variant
     Dim bestAlpha As Double, bestBeta As Double, bestGamma As Double
-    Dim bestSSE As Double
+    Dim bestMAPE As Double
     Dim currentAlpha As Double, currentBeta As Double, currentGamma As Double
-    Dim currentSSE As Double
+    Dim cvResult As CrossValidationResult
+    Dim numFolds As Integer
 
     bestAlpha = 0.3
     bestBeta = 0.1
     bestGamma = 0.1
-    bestSSE = 1E+100
+    bestMAPE = 1E+100
 
-    ' Coarse grid search
+    ' Use 3-fold cross-validation for robust parameter selection
+    numFolds = 3
+
+    ' Coarse grid search with cross-validation
     For currentAlpha = 0.1 To 0.9 Step 0.2
         For currentBeta = 0.05 To 0.3 Step 0.1
             For currentGamma = 0.05 To 0.3 Step 0.1
-                currentSSE = CalculateSSE_HW(Values, Frequency, currentAlpha, currentBeta, currentGamma, seasonalType)
-                If currentSSE < bestSSE Then
-                    bestSSE = currentSSE
+                cvResult = CrossValidateHW(Values, Frequency, currentAlpha, currentBeta, currentGamma, seasonalType, numFolds)
+                If cvResult.AvgMAPE < bestMAPE Then
+                    bestMAPE = cvResult.AvgMAPE
                     bestAlpha = currentAlpha
                     bestBeta = currentBeta
                     bestGamma = currentGamma
@@ -1011,6 +1019,251 @@ End Function
 ' ============================================================================
 
 ' ============================================================================
+' LINEAR TREND FORECAST - Simple linear regression
+' ============================================================================
+Public Function LinearTrendForecast(ByRef tsData As TimeSeriesData, _
+                                   ByVal horizon As Integer) As ForecastResult
+    Dim result As ForecastResult
+    Dim Values() As Double
+    Dim n As Long, i As Long
+    Dim sumX As Double, sumY As Double, sumXY As Double, sumX2 As Double
+    Dim slope As Double, intercept As Double
+    Dim meanX As Double, meanY As Double
+
+    Values = tsData.Values
+    n = UBound(Values) - LBound(Values) + 1
+
+    ' Initialize result arrays
+    ReDim result.FittedValues(LBound(Values) To UBound(Values))
+    ReDim result.Residuals(LBound(Values) To UBound(Values))
+    ReDim result.ForecastValues(1 To horizon)
+    ReDim result.Lower95(1 To horizon)
+    ReDim result.Upper95(1 To horizon)
+
+    ' Calculate linear regression: y = slope * x + intercept
+    sumX = 0: sumY = 0: sumXY = 0: sumX2 = 0
+
+    For i = LBound(Values) To UBound(Values)
+        Dim x As Double
+        x = i - LBound(Values) + 1 ' Time index starting from 1
+        sumX = sumX + x
+        sumY = sumY + Values(i)
+        sumXY = sumXY + x * Values(i)
+        sumX2 = sumX2 + x * x
+    Next i
+
+    meanX = sumX / n
+    meanY = sumY / n
+
+    slope = (sumXY - n * meanX * meanY) / (sumX2 - n * meanX * meanX)
+    intercept = meanY - slope * meanX
+
+    ' Calculate fitted values and residuals
+    For i = LBound(Values) To UBound(Values)
+        x = i - LBound(Values) + 1
+        result.FittedValues(i) = slope * x + intercept
+        result.Residuals(i) = Values(i) - result.FittedValues(i)
+    Next i
+
+    ' Generate forecasts
+    Dim residualStdDev As Double
+    residualStdDev = CalculateStdDev(result.Residuals)
+
+    For i = 1 To horizon
+        x = n + i
+        result.ForecastValues(i) = slope * x + intercept
+
+        ' Confidence intervals widen with horizon
+        Dim se As Double
+        se = residualStdDev * Sqr(1 + 1 / n + ((x - meanX) ^ 2) / sumX2)
+        result.Lower95(i) = result.ForecastValues(i) - 1.96 * se
+        result.Upper95(i) = result.ForecastValues(i) + 1.96 * se
+    Next i
+
+    ' Calculate metrics
+    result.MAPE = CalculateMAPE(Values, result.FittedValues)
+    result.MAE = CalculateMAE(result.Residuals)
+    result.RMSE = CalculateRMSE(result.Residuals)
+    result.MBE = CalculateMBE(Values, result.FittedValues)
+    result.ModelName = "Linear Trend"
+
+    LinearTrendForecast = result
+End Function
+
+' ============================================================================
+' MOVING AVERAGE FORECAST - Simple average of recent observations
+' ============================================================================
+Public Function MovingAverageForecast(ByRef tsData As TimeSeriesData, _
+                                     ByVal horizon As Integer) As ForecastResult
+    Dim result As ForecastResult
+    Dim Values() As Double
+    Dim n As Long, i As Long
+    Dim windowSize As Long
+    Dim movingAvg As Double
+
+    Values = tsData.Values
+    n = UBound(Values) - LBound(Values) + 1
+
+    ' Window size = min(12, n/3)
+    windowSize = WorksheetFunction.Min(12, WorksheetFunction.Max(3, Int(n / 3)))
+
+    ' Initialize result arrays
+    ReDim result.FittedValues(LBound(Values) To UBound(Values))
+    ReDim result.Residuals(LBound(Values) To UBound(Values))
+    ReDim result.ForecastValues(1 To horizon)
+    ReDim result.Lower95(1 To horizon)
+    ReDim result.Upper95(1 To horizon)
+
+    ' Calculate fitted values using moving average
+    For i = LBound(Values) To UBound(Values)
+        Dim sum As Double
+        Dim count As Long
+        Dim j As Long
+
+        sum = 0
+        count = 0
+
+        For j = WorksheetFunction.Max(LBound(Values), i - windowSize + 1) To i - 1
+            sum = sum + Values(j)
+            count = count + 1
+        Next j
+
+        If count > 0 Then
+            result.FittedValues(i) = sum / count
+        Else
+            result.FittedValues(i) = Values(i)
+        End If
+
+        result.Residuals(i) = Values(i) - result.FittedValues(i)
+    Next i
+
+    ' Calculate forecast as average of last windowSize observations
+    movingAvg = 0
+    For i = WorksheetFunction.Max(LBound(Values), UBound(Values) - windowSize + 1) To UBound(Values)
+        movingAvg = movingAvg + Values(i)
+    Next i
+    movingAvg = movingAvg / windowSize
+
+    ' All future forecasts are the same (flat forecast)
+    Dim residualStdDev As Double
+    residualStdDev = CalculateStdDev(result.Residuals)
+
+    For i = 1 To horizon
+        result.ForecastValues(i) = movingAvg
+        Dim se As Double
+        se = residualStdDev * Sqr(1 + i / windowSize)
+        result.Lower95(i) = result.ForecastValues(i) - 1.96 * se
+        result.Upper95(i) = result.ForecastValues(i) + 1.96 * se
+    Next i
+
+    ' Calculate metrics
+    result.MAPE = CalculateMAPE(Values, result.FittedValues)
+    result.MAE = CalculateMAE(result.Residuals)
+    result.RMSE = CalculateRMSE(result.Residuals)
+    result.MBE = CalculateMBE(Values, result.FittedValues)
+    result.ModelName = "Moving Average"
+
+    MovingAverageForecast = result
+End Function
+
+' ============================================================================
+' EXPONENTIAL TREND FORECAST - For exponentially growing series
+' ============================================================================
+Public Function ExponentialTrendForecast(ByRef tsData As TimeSeriesData, _
+                                        ByVal horizon As Integer) As ForecastResult
+    Dim result As ForecastResult
+    Dim Values() As Double
+    Dim logValues() As Double
+    Dim n As Long, i As Long
+    Dim sumX As Double, sumY As Double, sumXY As Double, sumX2 As Double
+    Dim slope As Double, intercept As Double
+    Dim meanX As Double, meanY As Double
+    Dim hasNegative As Boolean
+
+    Values = tsData.Values
+    n = UBound(Values) - LBound(Values) + 1
+
+    ' Initialize result arrays
+    ReDim result.FittedValues(LBound(Values) To UBound(Values))
+    ReDim result.Residuals(LBound(Values) To UBound(Values))
+    ReDim result.ForecastValues(1 To horizon)
+    ReDim result.Lower95(1 To horizon)
+    ReDim result.Upper95(1 To horizon)
+    ReDim logValues(LBound(Values) To UBound(Values))
+
+    ' Check for non-positive values (can't take log)
+    hasNegative = False
+    For i = LBound(Values) To UBound(Values)
+        If Values(i) <= 0 Then
+            hasNegative = True
+            Exit For
+        End If
+    Next i
+
+    ' If negative values, fall back to linear trend
+    If hasNegative Then
+        result = LinearTrendForecast(tsData, horizon)
+        result.ModelName = "Linear Trend (fallback)"
+        ExponentialTrendForecast = result
+        Exit Function
+    End If
+
+    ' Transform to log space
+    For i = LBound(Values) To UBound(Values)
+        logValues(i) = Log(Values(i))
+    Next i
+
+    ' Linear regression on log-transformed data: log(y) = slope * x + intercept
+    sumX = 0: sumY = 0: sumXY = 0: sumX2 = 0
+
+    For i = LBound(Values) To UBound(Values)
+        Dim x As Double
+        x = i - LBound(Values) + 1
+        sumX = sumX + x
+        sumY = sumY + logValues(i)
+        sumXY = sumXY + x * logValues(i)
+        sumX2 = sumX2 + x * x
+    Next i
+
+    meanX = sumX / n
+    meanY = sumY / n
+
+    slope = (sumXY - n * meanX * meanY) / (sumX2 - n * meanX * meanX)
+    intercept = meanY - slope * meanX
+
+    ' Calculate fitted values and residuals in original space
+    For i = LBound(Values) To UBound(Values)
+        x = i - LBound(Values) + 1
+        result.FittedValues(i) = Exp(slope * x + intercept)
+        result.Residuals(i) = Values(i) - result.FittedValues(i)
+    Next i
+
+    ' Generate forecasts
+    Dim residualStdDev As Double
+    residualStdDev = CalculateStdDev(result.Residuals)
+
+    For i = 1 To horizon
+        x = n + i
+        result.ForecastValues(i) = Exp(slope * x + intercept)
+
+        ' Approximate confidence intervals
+        Dim se As Double
+        se = result.ForecastValues(i) * residualStdDev / (sumY / n) * Sqr(i)
+        result.Lower95(i) = WorksheetFunction.Max(0, result.ForecastValues(i) - 1.96 * se)
+        result.Upper95(i) = result.ForecastValues(i) + 1.96 * se
+    Next i
+
+    ' Calculate metrics
+    result.MAPE = CalculateMAPE(Values, result.FittedValues)
+    result.MAE = CalculateMAE(result.Residuals)
+    result.RMSE = CalculateRMSE(result.Residuals)
+    result.MBE = CalculateMBE(Values, result.FittedValues)
+    result.ModelName = "Exponential Trend"
+
+    ExponentialTrendForecast = result
+End Function
+
+' ============================================================================
 ' AUTOMATIC MODEL SELECTION - Tries all methods and picks the best!
 ' ============================================================================
 Public Function AutoForecast(ByRef tsData As TimeSeriesData, _
@@ -1029,8 +1282,8 @@ Public Function AutoForecast(ByRef tsData As TimeSeriesData, _
     ' Clean outliers first for better accuracy
     cleanedData = RemoveOutliers(tsData)
 
-    ' Try ALL 10 forecasting methods - best one wins!
-    modelCount = 10
+    ' Try ALL 13 forecasting methods - best one wins!
+    modelCount = 13
     ReDim results(1 To modelCount)
     ReDim modelNames(1 To modelCount)
 
@@ -1108,6 +1361,27 @@ Public Function AutoForecast(ByRef tsData As TimeSeriesData, _
     results(10) = HoltWinters(cleanedData, horizon, altSeasonalType)
     results(10).ModelName = "HW (" & altSeasonalType & ")"
     If Err.Number <> 0 Then results(10).MAPE = 9999
+    On Error GoTo ErrorHandler
+
+    ' 11. Linear Trend (Simple but effective for trending data)
+    On Error Resume Next
+    results(11) = LinearTrendForecast(cleanedData, horizon)
+    results(11).ModelName = "Linear Trend"
+    If Err.Number <> 0 Then results(11).MAPE = 9999
+    On Error GoTo ErrorHandler
+
+    ' 12. Moving Average (Good for stable series)
+    On Error Resume Next
+    results(12) = MovingAverageForecast(cleanedData, horizon)
+    results(12).ModelName = "Moving Average"
+    If Err.Number <> 0 Then results(12).MAPE = 9999
+    On Error GoTo ErrorHandler
+
+    ' 13. Exponential Trend (For exponentially growing series)
+    On Error Resume Next
+    results(13) = ExponentialTrendForecast(cleanedData, horizon)
+    results(13).ModelName = "Exponential Trend"
+    If Err.Number <> 0 Then results(13).MAPE = 9999
     On Error GoTo ErrorHandler
     
     ' Sort models by MAPE to find top 3
@@ -1228,6 +1502,10 @@ Public Function AutoForecast(ByRef tsData As TimeSeriesData, _
         ' Mark that bias correction was applied
         combinedResult.ModelName = combinedResult.ModelName & " (bias-corrected)"
     End If
+
+    ' Apply bootstrap confidence intervals for more accurate uncertainty estimation
+    ' Use 200 bootstrap samples for good balance of accuracy vs speed
+    combinedResult = BootstrapConfidenceIntervals(combinedResult, 200, 0.95)
 
     AutoForecast = combinedResult
     Exit Function
@@ -2478,4 +2756,394 @@ Private Function CalculateCorrelation(ByRef x() As Double, ByRef y() As Double, 
         CalculateCorrelation = 0
     End If
 End Function
+
+' ============================================================================
+' TIME SERIES CROSS-VALIDATION
+' ============================================================================
+' Implements rolling window cross-validation for more robust parameter optimization
+' This prevents overfitting by testing parameters on multiple held-out test sets
+
+Public Type CrossValidationResult
+    AvgMAPE As Double
+    AvgMAE As Double
+    AvgRMSE As Double
+    NumFolds As Integer
+End Type
+
+' Performs rolling window cross-validation for Simple Exponential Smoothing
+Private Function CrossValidateSES(ByRef Values() As Double, ByVal Alpha As Double, ByVal numFolds As Integer) As CrossValidationResult
+    Dim result As CrossValidationResult
+    Dim n As Long
+    Dim foldSize As Long
+    Dim testSize As Long
+    Dim trainSize As Long
+    Dim fold As Integer
+    Dim i As Long, j As Long
+    Dim trainData() As Double
+    Dim testData() As Double
+    Dim level As Double
+    Dim forecast As Double
+    Dim errorVal As Double
+    Dim sumMAPE As Double, sumMAE As Double, sumRMSE As Double
+    Dim foldMAPE As Double, foldMAE As Double, foldRMSE As Double
+    Dim validCount As Long
+
+    n = UBound(Values) - LBound(Values) + 1
+    testSize = WorksheetFunction.Max(1, Int(n / (numFolds + 2))) ' Leave at least 2 periods for initial folds
+    foldSize = WorksheetFunction.Max(1, Int((n - testSize) / numFolds))
+
+    sumMAPE = 0: sumMAE = 0: sumRMSE = 0
+    validCount = 0
+
+    ' Rolling window: each fold trains on expanding window, tests on next testSize points
+    For fold = 1 To numFolds
+        trainSize = foldSize * fold
+
+        ' Need enough data for training
+        If trainSize < 3 Then GoTo NextFold
+        If trainSize + testSize > n Then Exit For
+
+        ' Extract train and test data
+        ReDim trainData(1 To trainSize)
+        ReDim testData(1 To testSize)
+
+        For i = 1 To trainSize
+            trainData(i) = Values(LBound(Values) + i - 1)
+        Next i
+
+        For i = 1 To testSize
+            testData(i) = Values(LBound(Values) + trainSize + i - 1)
+        Next i
+
+        ' Initialize level with first training value
+        level = trainData(1)
+
+        ' Run through training data to update level
+        For i = 2 To trainSize
+            level = Alpha * trainData(i) + (1 - Alpha) * level
+        Next i
+
+        ' Calculate errors on test set
+        foldMAPE = 0: foldMAE = 0: foldRMSE = 0
+        For i = 1 To testSize
+            forecast = level
+            errorVal = testData(i) - forecast
+
+            foldMAE = foldMAE + Abs(errorVal)
+            foldRMSE = foldRMSE + errorVal * errorVal
+            If testData(i) <> 0 Then
+                foldMAPE = foldMAPE + Abs(errorVal / testData(i)) * 100
+            End If
+
+            ' Update level for next forecast
+            level = Alpha * testData(i) + (1 - Alpha) * level
+        Next i
+
+        foldMAPE = foldMAPE / testSize
+        foldMAE = foldMAE / testSize
+        foldRMSE = Sqr(foldRMSE / testSize)
+
+        sumMAPE = sumMAPE + foldMAPE
+        sumMAE = sumMAE + foldMAE
+        sumRMSE = sumRMSE + foldRMSE
+        validCount = validCount + 1
+
+NextFold:
+    Next fold
+
+    If validCount > 0 Then
+        result.AvgMAPE = sumMAPE / validCount
+        result.AvgMAE = sumMAE / validCount
+        result.AvgRMSE = sumRMSE / validCount
+        result.NumFolds = validCount
+    Else
+        ' Fallback if CV fails
+        result.AvgMAPE = 9999
+        result.AvgMAE = 9999
+        result.AvgRMSE = 9999
+        result.NumFolds = 0
+    End If
+
+    CrossValidateSES = result
+End Function
+
+' Performs rolling window cross-validation for Holt-Winters
+Private Function CrossValidateHW(ByRef Values() As Double, _
+                                 ByVal frequency As Integer, _
+                                 ByVal Alpha As Double, _
+                                 ByVal Beta As Double, _
+                                 ByVal Gamma As Double, _
+                                 ByVal seasonalType As String, _
+                                 ByVal numFolds As Integer) As CrossValidationResult
+    Dim result As CrossValidationResult
+    Dim n As Long
+    Dim foldSize As Long
+    Dim testSize As Long
+    Dim trainSize As Long
+    Dim fold As Integer
+    Dim i As Long, j As Long, seasonalIdx As Long
+    Dim trainData() As Double
+    Dim testData() As Double
+    Dim level() As Double, Trend() As Double, Seasonal() As Double
+    Dim forecast As Double
+    Dim errorVal As Double
+    Dim sumMAPE As Double, sumMAE As Double, sumRMSE As Double
+    Dim foldMAPE As Double, foldMAE As Double, foldRMSE As Double
+    Dim validCount As Long
+    Dim prevLevel As Double, prevTrend As Double, prevSeasonal As Double
+
+    n = UBound(Values) - LBound(Values) + 1
+    testSize = WorksheetFunction.Max(frequency, Int(n / (numFolds + 2)))
+    foldSize = WorksheetFunction.Max(frequency * 2, Int((n - testSize) / numFolds))
+
+    sumMAPE = 0: sumMAE = 0: sumRMSE = 0
+    validCount = 0
+
+    ' Rolling window cross-validation
+    For fold = 1 To numFolds
+        trainSize = foldSize * fold
+
+        ' Need at least 2 full seasonal cycles for HW
+        If trainSize < frequency * 2 Then GoTo NextFoldHW
+        If trainSize + testSize > n Then Exit For
+
+        ' Extract train and test data
+        ReDim trainData(1 To trainSize)
+        ReDim testData(1 To testSize)
+
+        For i = 1 To trainSize
+            trainData(i) = Values(LBound(Values) + i - 1)
+        Next i
+
+        For i = 1 To testSize
+            testData(i) = Values(LBound(Values) + trainSize + i - 1)
+        Next i
+
+        ' Initialize components
+        ReDim level(1 To trainSize + testSize)
+        ReDim Trend(1 To trainSize + testSize)
+        ReDim Seasonal(1 To trainSize + testSize + frequency)
+
+        level(1) = trainData(1)
+        Trend(1) = (trainData(frequency + 1) - trainData(1)) / frequency
+
+        ' Initialize seasonal indices
+        If seasonalType = "additive" Then
+            For i = 1 To frequency
+                Seasonal(i) = trainData(i) - level(1)
+            Next i
+        Else
+            For i = 1 To frequency
+                If level(1) <> 0 Then
+                    Seasonal(i) = trainData(i) / level(1)
+                Else
+                    Seasonal(i) = 1
+                End If
+            Next i
+        End If
+
+        ' Run through training data
+        If seasonalType = "additive" Then
+            For i = 2 To trainSize
+                seasonalIdx = ((i - 1) Mod frequency) + 1
+                prevLevel = level(i - 1)
+                prevTrend = Trend(i - 1)
+                prevSeasonal = Seasonal(seasonalIdx)
+
+                level(i) = Alpha * (trainData(i) - prevSeasonal) + (1 - Alpha) * (prevLevel + prevTrend)
+                Trend(i) = Beta * (level(i) - prevLevel) + (1 - Beta) * prevTrend
+                Seasonal(i + frequency) = Gamma * (trainData(i) - level(i)) + (1 - Gamma) * prevSeasonal
+            Next i
+        Else ' Multiplicative
+            For i = 2 To trainSize
+                seasonalIdx = ((i - 1) Mod frequency) + 1
+                prevLevel = level(i - 1)
+                prevTrend = Trend(i - 1)
+                prevSeasonal = Seasonal(seasonalIdx)
+
+                If prevSeasonal <> 0 Then
+                    level(i) = Alpha * (trainData(i) / prevSeasonal) + (1 - Alpha) * (prevLevel + prevTrend)
+                Else
+                    level(i) = prevLevel + prevTrend
+                End If
+                Trend(i) = Beta * (level(i) - prevLevel) + (1 - Beta) * prevTrend
+                If level(i) <> 0 Then
+                    Seasonal(i + frequency) = Gamma * (trainData(i) / level(i)) + (1 - Gamma) * prevSeasonal
+                Else
+                    Seasonal(i + frequency) = prevSeasonal
+                End If
+            Next i
+        End If
+
+        ' Calculate errors on test set
+        foldMAPE = 0: foldMAE = 0: foldRMSE = 0
+        For i = 1 To testSize
+            seasonalIdx = ((trainSize + i - 1) Mod frequency) + 1
+            If seasonalIdx + frequency <= UBound(Seasonal) Then
+                prevSeasonal = Seasonal(seasonalIdx + frequency)
+            Else
+                prevSeasonal = Seasonal(seasonalIdx)
+            End If
+
+            If seasonalType = "additive" Then
+                forecast = level(trainSize) + Trend(trainSize) * i + prevSeasonal
+            Else
+                forecast = (level(trainSize) + Trend(trainSize) * i) * prevSeasonal
+            End If
+
+            errorVal = testData(i) - forecast
+
+            foldMAE = foldMAE + Abs(errorVal)
+            foldRMSE = foldRMSE + errorVal * errorVal
+            If testData(i) <> 0 Then
+                foldMAPE = foldMAPE + Abs(errorVal / testData(i)) * 100
+            End If
+        Next i
+
+        foldMAPE = foldMAPE / testSize
+        foldMAE = foldMAE / testSize
+        foldRMSE = Sqr(foldRMSE / testSize)
+
+        sumMAPE = sumMAPE + foldMAPE
+        sumMAE = sumMAE + foldMAE
+        sumRMSE = sumRMSE + foldRMSE
+        validCount = validCount + 1
+
+NextFoldHW:
+    Next fold
+
+    If validCount > 0 Then
+        result.AvgMAPE = sumMAPE / validCount
+        result.AvgMAE = sumMAE / validCount
+        result.AvgRMSE = sumRMSE / validCount
+        result.NumFolds = validCount
+    Else
+        result.AvgMAPE = 9999
+        result.AvgMAE = 9999
+        result.AvgRMSE = 9999
+        result.NumFolds = 0
+    End If
+
+    CrossValidateHW = result
+End Function
+
+' ============================================================================
+' BOOTSTRAP CONFIDENCE INTERVALS
+' ============================================================================
+' Provides more accurate confidence intervals than normal approximation
+' Uses residual bootstrap to capture non-normal distributions
+
+Public Function BootstrapConfidenceIntervals(ByRef result As ForecastResult, _
+                                            ByVal numBootstrap As Integer, _
+                                            Optional ByVal confidenceLevel As Double = 0.95) As ForecastResult
+    ' Apply residual bootstrap to improve confidence intervals
+    ' Uses percentile method for non-parametric CI estimation
+
+    Dim bootstrapResult As ForecastResult
+    bootstrapResult = result ' Copy all fields
+
+    Dim horizon As Integer
+    Dim n As Long
+    Dim i As Long, j As Long, b As Integer
+    Dim bootstrapForecasts() As Double
+    Dim sortedForecasts() As Double
+    Dim lowerIdx As Long
+    Dim upperIdx As Long
+    Dim residuals() As Double
+    Dim resampleIdx As Long
+
+    horizon = UBound(result.ForecastValues) - LBound(result.ForecastValues) + 1
+    n = UBound(result.Residuals) - LBound(result.Residuals) + 1
+
+    ' Extract non-zero residuals for resampling
+    Dim validResiduals() As Double
+    Dim validCount As Long
+    validCount = 0
+
+    For i = LBound(result.Residuals) To UBound(result.Residuals)
+        If Not IsEmpty(result.Residuals(i)) Then
+            validCount = validCount + 1
+        End If
+    Next i
+
+    If validCount < 10 Then
+        ' Not enough residuals for bootstrap, return original
+        BootstrapConfidenceIntervals = result
+        Exit Function
+    End If
+
+    ReDim validResiduals(1 To validCount)
+    validCount = 0
+    For i = LBound(result.Residuals) To UBound(result.Residuals)
+        If Not IsEmpty(result.Residuals(i)) Then
+            validCount = validCount + 1
+            validResiduals(validCount) = result.Residuals(i)
+        End If
+    Next i
+
+    ' Perform bootstrap for each forecast horizon
+    For i = 1 To horizon
+        ReDim bootstrapForecasts(1 To numBootstrap)
+
+        ' Generate bootstrap samples
+        For b = 1 To numBootstrap
+            ' Resample residuals and add to point forecast
+            ' This simulates the forecast uncertainty
+            Dim bootstrapError As Double
+            bootstrapError = 0
+
+            ' For horizon i, cumulative error from i resampled residuals
+            For j = 1 To i
+                resampleIdx = Int(Rnd() * validCount) + 1
+                bootstrapError = bootstrapError + validResiduals(resampleIdx)
+            Next j
+
+            ' Average error over horizon steps (random walk of errors)
+            bootstrapForecasts(b) = result.ForecastValues(i) + (bootstrapError / Sqr(i))
+        Next b
+
+        ' Sort bootstrap forecasts
+        ReDim sortedForecasts(1 To numBootstrap)
+        For b = 1 To numBootstrap
+            sortedForecasts(b) = bootstrapForecasts(b)
+        Next b
+        Call BubbleSortDouble(sortedForecasts)
+
+        ' Calculate percentile-based confidence intervals
+        Dim alpha As Double
+        alpha = 1 - confidenceLevel
+        lowerIdx = WorksheetFunction.Max(1, Int(alpha / 2 * numBootstrap))
+        upperIdx = WorksheetFunction.Min(numBootstrap, Int((1 - alpha / 2) * numBootstrap))
+
+        bootstrapResult.Lower95(i) = sortedForecasts(lowerIdx)
+        bootstrapResult.Upper95(i) = sortedForecasts(upperIdx)
+
+        ' Also calculate 80% CI using same bootstrap samples
+        lowerIdx = WorksheetFunction.Max(1, Int(0.1 * numBootstrap))
+        upperIdx = WorksheetFunction.Min(numBootstrap, Int(0.9 * numBootstrap))
+        bootstrapResult.Lower80(i) = sortedForecasts(lowerIdx)
+        bootstrapResult.Upper80(i) = sortedForecasts(upperIdx)
+    Next i
+
+    BootstrapConfidenceIntervals = bootstrapResult
+End Function
+
+Private Sub BubbleSortDouble(ByRef arr() As Double)
+    ' Simple bubble sort for bootstrap samples
+    Dim i As Long, j As Long
+    Dim temp As Double
+    Dim n As Long
+
+    n = UBound(arr) - LBound(arr) + 1
+
+    For i = LBound(arr) To UBound(arr) - 1
+        For j = LBound(arr) To UBound(arr) - 1 - (i - LBound(arr))
+            If arr(j) > arr(j + 1) Then
+                temp = arr(j)
+                arr(j) = arr(j + 1)
+                arr(j + 1) = temp
+            End If
+        Next j
+    Next i
+End Sub
 
