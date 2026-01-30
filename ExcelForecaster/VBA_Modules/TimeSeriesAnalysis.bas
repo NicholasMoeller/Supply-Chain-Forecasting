@@ -35,6 +35,22 @@ Public Type DecompositionResult
     Random() As Double
 End Type
 
+' Seasonality Detection Result Type
+Public Type SeasonalityInfo
+    HasSeasonality As Boolean
+    DetectedFrequency As Integer
+    SeasonalType As String ' "additive", "multiplicative", "none"
+    Confidence As Double ' 0-100%
+End Type
+
+' Cross-Validation Result Type
+Public Type CrossValidationResult
+    AvgMAPE As Double
+    AvgMAE As Double
+    AvgRMSE As Double
+    NumFolds As Integer
+End Type
+
 ' ============================================================================
 ' SIMPLE EXPONENTIAL SMOOTHING
 ' ============================================================================
@@ -2490,13 +2506,6 @@ End Function
 ' ============================================================================
 
 ' Type for seasonality detection results
-Public Type SeasonalityInfo
-    HasSeasonality As Boolean
-    DetectedFrequency As Integer
-    SeasonalType As String ' "additive", "multiplicative", "none"
-    Confidence As Double ' 0-100%
-End Type
-
 Public Function DetectSeasonality(ByRef tsData As TimeSeriesData) As SeasonalityInfo
     ' Automatically detect if data has seasonality and what type
     Dim result As SeasonalityInfo
@@ -2762,13 +2771,6 @@ End Function
 ' ============================================================================
 ' Implements rolling window cross-validation for more robust parameter optimization
 ' This prevents overfitting by testing parameters on multiple held-out test sets
-
-Public Type CrossValidationResult
-    AvgMAPE As Double
-    AvgMAE As Double
-    AvgRMSE As Double
-    NumFolds As Integer
-End Type
 
 ' Performs rolling window cross-validation for Simple Exponential Smoothing
 Private Function CrossValidateSES(ByRef Values() As Double, ByVal Alpha As Double, ByVal numFolds As Integer) As CrossValidationResult
