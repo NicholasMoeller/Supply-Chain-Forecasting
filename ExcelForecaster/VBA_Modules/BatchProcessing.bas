@@ -57,6 +57,11 @@ Public Type ComponentSummary
     MissingPct As Double ' Percentage of missing/zero values
     OutlierPct As Double ' Percentage of outliers detected
     VolatilityIndex As Double ' Coefficient of variation
+
+    ' NEW: Pattern Classification
+    PatternType As String ' "Trending", "Seasonal", "Intermittent", "Stable", "Volatile", "Mixed"
+    TrendDirection As String ' "Upward", "Downward", "Flat"
+    SeasonalStrength As Double ' 0-100, strength of seasonality
 End Type
 
 ' Global array to store all component results
@@ -234,6 +239,9 @@ Public Sub ProcessAllComponents(frequency As Long, horizon As Long, seasonalType
     ' Generate component correlation analysis
     Call GenerateCorrelationAnalysis(ws)
 
+    ' Generate batch-level summary statistics
+    Call GenerateBatchSummaryStats(ws)
+
     ' Create detailed diagnostics for worst/best components if requested
     If fullDiagnostics Then
         Call CreateTopBottomDiagnostics(ws, frequency, horizon, seasonalType)
@@ -366,6 +374,9 @@ Private Sub ProcessSingleComponent(componentName As String, data() As Double, _
     ' NEW: Data Quality Analysis
     Call AnalyzeDataQuality(data, summary.DataQualityScore, summary.MissingPct, summary.OutlierPct, summary.VolatilityIndex)
 
+    ' NEW: Pattern Detection
+    Call DetectDataPattern(data, CInt(frequency), summary.PatternType, summary.TrendDirection, summary.SeasonalStrength)
+
     ' NEW: Quality Flags & Warnings
     Dim warnings As String
     warnings = ""
@@ -486,15 +497,20 @@ Private Sub CreateSummaryWorksheet()
     ws.Cells(1, 33).Value = "Outlier %"
     ws.Cells(1, 34).Value = "Volatility Index"
 
+    ' NEW: Pattern Detection Headers
+    ws.Cells(1, 35).Value = "Pattern Type"
+    ws.Cells(1, 36).Value = "Trend Direction"
+    ws.Cells(1, 37).Value = "Seasonal Strength"
+
     ' Format headers
-    With ws.Range("A1:AH1")
+    With ws.Range("A1:AK1")
         .Font.Bold = True
         .Interior.Color = RGB(68, 114, 196)
         .Font.Color = RGB(255, 255, 255)
         .HorizontalAlignment = xlCenter
     End With
 
-    ws.Columns("A:AH").AutoFit
+    ws.Columns("A:AK").AutoFit
 End Sub
 
 ' ============================================================================
@@ -584,6 +600,35 @@ Private Sub WriteSummaryRow(rowIndex As Long, summary As ComponentSummary)
     Else
         ws.Cells(row, 31).Interior.Color = RGB(255, 0, 0) ' Red - Poor
         ws.Cells(row, 31).Font.Color = RGB(255, 255, 255)
+    End If
+
+    ' NEW: Pattern Detection Results
+    ws.Cells(row, 35).Value = summary.PatternType
+    ws.Cells(row, 36).Value = summary.TrendDirection
+    ws.Cells(row, 37).Value = Format(summary.SeasonalStrength, "0.0")
+
+    ' Color code pattern type
+    Select Case summary.PatternType
+        Case "Stable"
+            ws.Cells(row, 35).Interior.Color = RGB(146, 208, 80) ' Green - easiest to forecast
+        Case "Trending", "Seasonal"
+            ws.Cells(row, 35).Interior.Color = RGB(255, 255, 200) ' Light yellow - moderate
+        Case "Intermittent", "Volatile"
+            ws.Cells(row, 35).Interior.Color = RGB(255, 192, 203) ' Pink - difficult
+        Case "Mixed (Trend+Seasonal)"
+            ws.Cells(row, 35).Interior.Color = RGB(255, 217, 102) ' Yellow - complex
+    End Select
+
+    ' Color code trend direction
+    If summary.TrendDirection = "Upward" Then
+        ws.Cells(row, 36).Interior.Color = RGB(200, 255, 200) ' Light green
+        ws.Cells(row, 36).Value = "↑ " & summary.TrendDirection
+    ElseIf summary.TrendDirection = "Downward" Then
+        ws.Cells(row, 36).Interior.Color = RGB(255, 200, 200) ' Light red
+        ws.Cells(row, 36).Value = "↓ " & summary.TrendDirection
+    Else
+        ws.Cells(row, 36).Interior.Color = RGB(242, 242, 242) ' Gray
+        ws.Cells(row, 36).Value = "→ " & summary.TrendDirection
     End If
 
     ' Color code quality flag
@@ -1536,6 +1581,193 @@ Private Function CalculatePearsonCorrelation(ByRef x() As Double, ByRef y() As D
     End If
 End Function
 
+Private Sub GenerateBatchSummaryStats(ws As Worksheet)
+    ' Generate comprehensive batch-level summary statistics
+    ' Provides overview of all components in the batch
+
+    On Error GoTo ErrorHandler
+
+    Dim i As Long
+    Dim startRow As Long, startCol As Long
+    Dim avgMAPE As Double, medianMAPE As Double
+    Dim avgQuality As Double
+    Dim excellentCount As Long, goodCount As Long, acceptableCount As Long, poorCount As Long
+    Dim modelCounts(1 To 15) As Long
+    Dim modelNames(1 To 15) As String
+    Dim maxModelCount As Long
+    Dim topModel As String
+    Dim patternCounts(1 To 7) As Long
+    Dim patternNames(1 To 7) As String
+
+    ' Position (top left area)
+    startRow = 2
+    startCol = 38 ' Column AL
+
+    ' Header
+    ws.Cells(startRow, startCol).Value = "BATCH SUMMARY STATISTICS"
+    ws.Cells(startRow, startCol).Font.Bold = True
+    ws.Cells(startRow, startCol).Font.Size = 14
+    ws.Cells(startRow, startCol).Interior.Color = RGB(68, 114, 196)
+    ws.Cells(startRow, startCol).Font.Color = RGB(255, 255, 255)
+    ws.Range(ws.Cells(startRow, startCol), ws.Cells(startRow, startCol + 1)).Merge
+
+    ' Initialize counters
+    avgMAPE = 0
+    avgQuality = 0
+    excellentCount = 0: goodCount = 0: acceptableCount = 0: poorCount = 0
+    maxModelCount = 0
+
+    ' Pattern names
+    patternNames(1) = "Stable"
+    patternNames(2) = "Trending"
+    patternNames(3) = "Seasonal"
+    patternNames(4) = "Mixed"
+    patternNames(5) = "Intermittent"
+    patternNames(6) = "Volatile"
+    patternNames(7) = "Other"
+
+    ' Calculate statistics
+    For i = 1 To ComponentCount
+        If Not ComponentResults(i).HasError Then
+            ' Accuracy metrics
+            avgMAPE = avgMAPE + ComponentResults(i).BestMAPE
+            avgQuality = avgQuality + ComponentResults(i).DataQualityScore
+
+            ' Accuracy classification
+            Select Case ComponentResults(i).AccuracyClass
+                Case "Excellent": excellentCount = excellentCount + 1
+                Case "Good": goodCount = goodCount + 1
+                Case "Acceptable": acceptableCount = acceptableCount + 1
+                Case "Poor": poorCount = poorCount + 1
+            End Select
+
+            ' Model selection tracking
+            Dim modelName As String
+            modelName = ComponentResults(i).BestModel
+
+            ' Count model occurrences (simple tracking)
+            Dim foundModel As Boolean
+            foundModel = False
+            Dim j As Long
+            For j = 1 To 15
+                If modelNames(j) = modelName Then
+                    modelCounts(j) = modelCounts(j) + 1
+                    foundModel = True
+                    Exit For
+                ElseIf modelNames(j) = "" Then
+                    modelNames(j) = modelName
+                    modelCounts(j) = 1
+                    foundModel = True
+                    Exit For
+                End If
+            Next j
+
+            ' Pattern distribution
+            Select Case ComponentResults(i).PatternType
+                Case "Stable": patternCounts(1) = patternCounts(1) + 1
+                Case "Trending": patternCounts(2) = patternCounts(2) + 1
+                Case "Seasonal": patternCounts(3) = patternCounts(3) + 1
+                Case "Mixed (Trend+Seasonal)": patternCounts(4) = patternCounts(4) + 1
+                Case "Intermittent": patternCounts(5) = patternCounts(5) + 1
+                Case "Volatile": patternCounts(6) = patternCounts(6) + 1
+                Case Else: patternCounts(7) = patternCounts(7) + 1
+            End Select
+        End If
+    Next i
+
+    If ComponentCount > 0 Then
+        avgMAPE = avgMAPE / ComponentCount
+        avgQuality = avgQuality / ComponentCount
+    End If
+
+    ' Find most common model
+    For i = 1 To 15
+        If modelCounts(i) > maxModelCount Then
+            maxModelCount = modelCounts(i)
+            topModel = modelNames(i)
+        End If
+    Next i
+
+    ' Write summary statistics
+    Dim row As Long
+    row = startRow + 2
+
+    ws.Cells(row, startCol).Value = "Total Components:"
+    ws.Cells(row, startCol + 1).Value = ComponentCount
+    ws.Cells(row, startCol + 1).Font.Bold = True
+
+    row = row + 1
+    ws.Cells(row, startCol).Value = "Average MAPE:"
+    ws.Cells(row, startCol + 1).Value = Format(avgMAPE, "0.00") & "%"
+    ws.Cells(row, startCol + 1).Font.Bold = True
+    ' Color code
+    If avgMAPE < 10 Then
+        ws.Cells(row, startCol + 1).Interior.Color = RGB(146, 208, 80)
+    ElseIf avgMAPE < 20 Then
+        ws.Cells(row, startCol + 1).Interior.Color = RGB(255, 217, 102)
+    Else
+        ws.Cells(row, startCol + 1).Interior.Color = RGB(255, 192, 203)
+    End If
+
+    row = row + 1
+    ws.Cells(row, startCol).Value = "Avg Data Quality:"
+    ws.Cells(row, startCol + 1).Value = Format(avgQuality, "0.0")
+    ws.Cells(row, startCol + 1).Font.Bold = True
+
+    row = row + 2
+    ws.Cells(row, startCol).Value = "Accuracy Distribution:"
+    ws.Cells(row, startCol).Font.Bold = True
+    ws.Cells(row, startCol).Font.Underline = True
+
+    row = row + 1
+    ws.Cells(row, startCol).Value = "  Excellent (< 10%):"
+    ws.Cells(row, startCol + 1).Value = excellentCount & " (" & Format(excellentCount / ComponentCount * 100, "0") & "%)"
+    ws.Cells(row, startCol + 1).Interior.Color = RGB(146, 208, 80)
+
+    row = row + 1
+    ws.Cells(row, startCol).Value = "  Good (10-20%):"
+    ws.Cells(row, startCol + 1).Value = goodCount & " (" & Format(goodCount / ComponentCount * 100, "0") & "%)"
+    ws.Cells(row, startCol + 1).Interior.Color = RGB(255, 255, 200)
+
+    row = row + 1
+    ws.Cells(row, startCol).Value = "  Acceptable (20-30%):"
+    ws.Cells(row, startCol + 1).Value = acceptableCount & " (" & Format(acceptableCount / ComponentCount * 100, "0") & "%)"
+    ws.Cells(row, startCol + 1).Interior.Color = RGB(255, 217, 102)
+
+    row = row + 1
+    ws.Cells(row, startCol).Value = "  Poor (> 30%):"
+    ws.Cells(row, startCol + 1).Value = poorCount & " (" & Format(poorCount / ComponentCount * 100, "0") & "%)"
+    ws.Cells(row, startCol + 1).Interior.Color = RGB(255, 192, 203)
+
+    row = row + 2
+    ws.Cells(row, startCol).Value = "Most Common Model:"
+    ws.Cells(row, startCol + 1).Value = topModel & " (" & maxModelCount & "x)"
+    ws.Cells(row, startCol + 1).Font.Bold = True
+    ws.Cells(row, startCol + 1).Interior.Color = RGB(217, 225, 242)
+
+    row = row + 2
+    ws.Cells(row, startCol).Value = "Pattern Distribution:"
+    ws.Cells(row, startCol).Font.Bold = True
+    ws.Cells(row, startCol).Font.Underline = True
+
+    For i = 1 To 7
+        If patternCounts(i) > 0 Then
+            row = row + 1
+            ws.Cells(row, startCol).Value = "  " & patternNames(i) & ":"
+            ws.Cells(row, startCol + 1).Value = patternCounts(i) & " (" & Format(patternCounts(i) / ComponentCount * 100, "0") & "%)"
+        End If
+    Next i
+
+    ' Auto-fit
+    ws.Columns(startCol).AutoFit
+    ws.Columns(startCol + 1).AutoFit
+
+    Exit Sub
+
+ErrorHandler:
+    ws.Cells(startRow + 2, startCol).Value = "Error generating batch statistics: " & Err.Description
+End Sub
+
 Private Sub WritePortfolioMetrics(ws As Worksheet, mape As Double, mae As Double, rmse As Double, bestModel As String)
     ' Write portfolio-level metrics to summary sheet
     Dim startRow As Long
@@ -2051,3 +2283,192 @@ Private Sub AnalyzeDataQuality(ByRef data() As Double, _
 
     qualityScore = WorksheetFunction.Max(0, score)
 End Sub
+
+Private Sub DetectDataPattern(ByRef data() As Double, _
+                              ByVal frequency As Integer, _
+                              ByRef patternType As String, _
+                              ByRef trendDirection As String, _
+                              ByRef seasonalStrength As Double)
+    ' Automatically detect the dominant pattern in the time series
+    ' Helps validate model selection and understand data characteristics
+
+    Dim n As Long
+    Dim i As Long
+    Dim mean As Double
+    Dim sum As Double
+    Dim validCount As Long
+    Dim zeroCount As Long
+    Dim cv As Double
+    Dim stdDev As Double
+
+    ' Calculate basic statistics
+    n = UBound(data) - LBound(data) + 1
+    sum = 0
+    validCount = 0
+    zeroCount = 0
+
+    For i = LBound(data) To UBound(data)
+        If data(i) = 0 Then
+            zeroCount = zeroCount + 1
+        Else
+            sum = sum + data(i)
+            validCount = validCount + 1
+        End If
+    Next i
+
+    If validCount = 0 Then
+        patternType = "Insufficient Data"
+        trendDirection = "N/A"
+        seasonalStrength = 0
+        Exit Sub
+    End If
+
+    mean = sum / validCount
+
+    ' Calculate standard deviation
+    Dim sumSquaredDiff As Double
+    sumSquaredDiff = 0
+    For i = LBound(data) To UBound(data)
+        If data(i) <> 0 Then
+            sumSquaredDiff = sumSquaredDiff + (data(i) - mean) ^ 2
+        End If
+    Next i
+    stdDev = Sqr(sumSquaredDiff / validCount)
+    cv = (stdDev / mean) * 100
+
+    ' 1. Check for intermittent demand (>40% zeros)
+    Dim zeroPct As Double
+    zeroPct = (zeroCount / n) * 100
+    If zeroPct > 40 Then
+        patternType = "Intermittent"
+        trendDirection = "N/A"
+        seasonalStrength = 0
+        Exit Sub
+    End If
+
+    ' 2. Detect trend using linear regression
+    Dim sumX As Double, sumY As Double, sumXY As Double, sumX2 As Double
+    Dim slope As Double
+    sumX = 0: sumY = 0: sumXY = 0: sumX2 = 0
+
+    Dim validIdx As Long
+    validIdx = 0
+    For i = LBound(data) To UBound(data)
+        If data(i) <> 0 Then
+            validIdx = validIdx + 1
+            sumX = sumX + validIdx
+            sumY = sumY + data(i)
+            sumXY = sumXY + validIdx * data(i)
+            sumX2 = sumX2 + validIdx * validIdx
+        End If
+    Next i
+
+    If validCount > 1 Then
+        Dim meanX As Double, meanY As Double
+        meanX = sumX / validCount
+        meanY = sumY / validCount
+        slope = (sumXY - validCount * meanX * meanY) / (sumX2 - validCount * meanX * meanX)
+    Else
+        slope = 0
+    End If
+
+    ' Classify trend direction
+    Dim trendStrength As Double
+    trendStrength = Abs(slope) / mean * 100 ' Slope as % of mean
+
+    If trendStrength > 5 Then
+        If slope > 0 Then
+            trendDirection = "Upward"
+        Else
+            trendDirection = "Downward"
+        End If
+    Else
+        trendDirection = "Flat"
+    End If
+
+    ' 3. Detect seasonality (if enough data)
+    seasonalStrength = 0
+    Dim hasSeasonality As Boolean
+    hasSeasonality = False
+
+    If validCount >= frequency * 2 Then
+        ' Calculate ACF at seasonal lag
+        Dim acf As Double
+        acf = CalculateACFAtLag(data, frequency)
+
+        If acf > 0.3 Then
+            hasSeasonality = True
+            seasonalStrength = acf * 100
+        End If
+    End If
+
+    ' 4. Classify pattern type
+    If cv > 100 Then
+        ' Very high volatility
+        patternType = "Volatile"
+    ElseIf hasSeasonality And trendStrength > 5 Then
+        ' Both trend and seasonality
+        patternType = "Mixed (Trend+Seasonal)"
+    ElseIf hasSeasonality Then
+        patternType = "Seasonal"
+    ElseIf trendStrength > 5 Then
+        patternType = "Trending"
+    ElseIf cv < 15 Then
+        ' Low volatility, no trend
+        patternType = "Stable"
+    Else
+        patternType = "Variable"
+    End If
+End Sub
+
+Private Function CalculateACFAtLag(ByRef data() As Double, lag As Integer) As Double
+    ' Calculate autocorrelation at specific lag
+    Dim n As Long
+    Dim i As Long
+    Dim mean As Double
+    Dim sum As Double
+    Dim validCount As Long
+    Dim numerator As Double
+    Dim denominator As Double
+
+    n = UBound(data) - LBound(data) + 1
+
+    ' Calculate mean (excluding zeros)
+    sum = 0
+    validCount = 0
+    For i = LBound(data) To UBound(data)
+        If data(i) <> 0 Then
+            sum = sum + data(i)
+            validCount = validCount + 1
+        End If
+    Next i
+
+    If validCount < lag + 1 Then
+        CalculateACFAtLag = 0
+        Exit Function
+    End If
+
+    mean = sum / validCount
+
+    ' Calculate ACF
+    numerator = 0
+    denominator = 0
+
+    For i = LBound(data) + lag To UBound(data)
+        If data(i) <> 0 And data(i - lag) <> 0 Then
+            numerator = numerator + (data(i) - mean) * (data(i - lag) - mean)
+        End If
+    Next i
+
+    For i = LBound(data) To UBound(data)
+        If data(i) <> 0 Then
+            denominator = denominator + (data(i) - mean) ^ 2
+        End If
+    Next i
+
+    If denominator > 0 Then
+        CalculateACFAtLag = numerator / denominator
+    Else
+        CalculateACFAtLag = 0
+    End If
+End Function
