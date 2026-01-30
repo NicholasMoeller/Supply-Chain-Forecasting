@@ -62,6 +62,24 @@ Public Type ComponentSummary
     PatternType As String ' "Trending", "Seasonal", "Intermittent", "Stable", "Volatile", "Mixed"
     TrendDirection As String ' "Upward", "Downward", "Flat"
     SeasonalStrength As Double ' 0-100, strength of seasonality
+
+    ' NEW: Safety Stock & Inventory Recommendations
+    SafetyStock95 As Double ' Safety stock for 95% service level
+    SafetyStock99 As Double ' Safety stock for 99% service level
+    ReorderPoint95 As Double ' Reorder point for 95% service level
+    ReorderPoint99 As Double ' Reorder point for 99% service level
+    StockoutRisk As Double ' Probability of stockout (%)
+    AvgDemandPerPeriod As Double ' Average demand per period
+
+    ' NEW: Forecast Value at Risk (FVaR)
+    ForecastP5 As Double ' 5th percentile forecast (95% chance demand > this)
+    ForecastP10 As Double ' 10th percentile forecast (90% chance demand > this)
+    ForecastP90 As Double ' 90th percentile forecast (10% chance demand > this)
+    DownsideRisk As Double ' Expected shortfall below median
+
+    ' NEW: Model Selection Explanation
+    ModelReason As String ' Why this model was selected
+    ModelConfidence As String ' "High", "Medium", "Low" confidence in model choice
 End Type
 
 ' Global array to store all component results
@@ -377,6 +395,24 @@ Private Sub ProcessSingleComponent(componentName As String, data() As Double, _
     ' NEW: Pattern Detection
     Call DetectDataPattern(data, CInt(frequency), summary.PatternType, summary.TrendDirection, summary.SeasonalStrength)
 
+    ' NEW: Safety Stock & Inventory Recommendations
+    ' Assume lead time = frequency (1 cycle) - user can adjust
+    Dim leadTime As Integer
+    leadTime = CInt(frequency)
+    If leadTime < 1 Then leadTime = 1
+    Call CalculateSafetyStockRecommendations(data, bestResult, leadTime, _
+                                             summary.SafetyStock95, summary.SafetyStock99, _
+                                             summary.ReorderPoint95, summary.ReorderPoint99, _
+                                             summary.StockoutRisk, summary.AvgDemandPerPeriod)
+
+    ' NEW: Forecast Value at Risk (FVaR)
+    Call CalculateForecastValueAtRisk(bestResult, summary.ForecastP5, summary.ForecastP10, _
+                                      summary.ForecastP90, summary.DownsideRisk)
+
+    ' NEW: Model Selection Explanation (must be after all other calculations)
+    summary.ModelReason = GenerateModelExplanation(summary)
+    summary.ModelConfidence = DetermineModelConfidence(summary)
+
     ' NEW: Quality Flags & Warnings
     Dim warnings As String
     warnings = ""
@@ -502,15 +538,33 @@ Private Sub CreateSummaryWorksheet()
     ws.Cells(1, 36).Value = "Trend Direction"
     ws.Cells(1, 37).Value = "Seasonal Strength"
 
+    ' NEW: Safety Stock & Inventory Headers
+    ws.Cells(1, 38).Value = "Avg Demand/Period"
+    ws.Cells(1, 39).Value = "Safety Stock (95%)"
+    ws.Cells(1, 40).Value = "Safety Stock (99%)"
+    ws.Cells(1, 41).Value = "Reorder Point (95%)"
+    ws.Cells(1, 42).Value = "Reorder Point (99%)"
+    ws.Cells(1, 43).Value = "Stockout Risk (%)"
+
+    ' NEW: Forecast Value at Risk Headers
+    ws.Cells(1, 44).Value = "Forecast P5"
+    ws.Cells(1, 45).Value = "Forecast P10"
+    ws.Cells(1, 46).Value = "Forecast P90"
+    ws.Cells(1, 47).Value = "Downside Risk"
+
+    ' NEW: Model Selection Explanation Headers
+    ws.Cells(1, 48).Value = "Model Selection Reason"
+    ws.Cells(1, 49).Value = "Model Confidence"
+
     ' Format headers
-    With ws.Range("A1:AK1")
+    With ws.Range("A1:AW1")
         .Font.Bold = True
         .Interior.Color = RGB(68, 114, 196)
         .Font.Color = RGB(255, 255, 255)
         .HorizontalAlignment = xlCenter
     End With
 
-    ws.Columns("A:AK").AutoFit
+    ws.Columns("A:AW").AutoFit
 End Sub
 
 ' ============================================================================
@@ -630,6 +684,54 @@ Private Sub WriteSummaryRow(rowIndex As Long, summary As ComponentSummary)
         ws.Cells(row, 36).Interior.Color = RGB(242, 242, 242) ' Gray
         ws.Cells(row, 36).Value = "→ " & summary.TrendDirection
     End If
+
+    ' NEW: Safety Stock & Inventory Recommendations
+    ws.Cells(row, 38).Value = Format(summary.AvgDemandPerPeriod, "0.0")
+    ws.Cells(row, 39).Value = Format(summary.SafetyStock95, "0.0")
+    ws.Cells(row, 40).Value = Format(summary.SafetyStock99, "0.0")
+    ws.Cells(row, 41).Value = Format(summary.ReorderPoint95, "0.0")
+    ws.Cells(row, 42).Value = Format(summary.ReorderPoint99, "0.0")
+    ws.Cells(row, 43).Value = Format(summary.StockoutRisk, "0.0") & "%"
+
+    ' Color code stockout risk
+    If summary.StockoutRisk < 10 Then
+        ws.Cells(row, 43).Interior.Color = RGB(146, 208, 80) ' Green - low risk
+    ElseIf summary.StockoutRisk < 25 Then
+        ws.Cells(row, 43).Interior.Color = RGB(255, 217, 102) ' Yellow - medium risk
+    Else
+        ws.Cells(row, 43).Interior.Color = RGB(255, 192, 203) ' Pink - high risk
+    End If
+
+    ' NEW: Forecast Value at Risk (FVaR)
+    ws.Cells(row, 44).Value = Format(summary.ForecastP5, "0.0")
+    ws.Cells(row, 45).Value = Format(summary.ForecastP10, "0.0")
+    ws.Cells(row, 46).Value = Format(summary.ForecastP90, "0.0")
+    ws.Cells(row, 47).Value = Format(summary.DownsideRisk, "0.0")
+
+    ' Highlight downside risk
+    If summary.DownsideRisk > summary.AvgDemandPerPeriod * 0.5 Then
+        ws.Cells(row, 47).Interior.Color = RGB(255, 192, 203) ' Pink - high uncertainty
+    ElseIf summary.DownsideRisk > summary.AvgDemandPerPeriod * 0.25 Then
+        ws.Cells(row, 47).Interior.Color = RGB(255, 217, 102) ' Yellow - medium uncertainty
+    Else
+        ws.Cells(row, 47).Interior.Color = RGB(200, 255, 200) ' Light green - low uncertainty
+    End If
+
+    ' NEW: Model Selection Explanation
+    ws.Cells(row, 48).Value = summary.ModelReason
+    ws.Cells(row, 48).WrapText = False
+    ws.Cells(row, 49).Value = summary.ModelConfidence
+
+    ' Color code model confidence
+    Select Case summary.ModelConfidence
+        Case "High"
+            ws.Cells(row, 49).Interior.Color = RGB(146, 208, 80) ' Green
+            ws.Cells(row, 49).Font.Bold = True
+        Case "Medium"
+            ws.Cells(row, 49).Interior.Color = RGB(255, 217, 102) ' Yellow
+        Case "Low"
+            ws.Cells(row, 49).Interior.Color = RGB(255, 192, 203) ' Pink
+    End Select
 
     ' Color code quality flag
     If summary.QualityFlag = "🟢 GOOD" Then
@@ -2470,5 +2572,285 @@ Private Function CalculateACFAtLag(ByRef data() As Double, lag As Integer) As Do
         CalculateACFAtLag = numerator / denominator
     Else
         CalculateACFAtLag = 0
+    End If
+End Function
+
+Private Sub CalculateSafetyStockRecommendations(ByRef data() As Double, _
+                                                ByRef forecastResult As TimeSeriesAnalysis.ForecastResult, _
+                                                ByVal leadTimePeriods As Integer, _
+                                                ByRef safetyStock95 As Double, _
+                                                ByRef safetyStock99 As Double, _
+                                                ByRef reorderPoint95 As Double, _
+                                                ByRef reorderPoint99 As Double, _
+                                                ByRef stockoutRisk As Double, _
+                                                ByRef avgDemand As Double)
+    ' Calculate safety stock and reorder point recommendations
+    ' Uses forecast error as demand variability estimate
+    ' Safety Stock = Z × σ_LT where σ_LT = σ × √(LT)
+
+    Dim n As Long
+    Dim i As Long
+    Dim sum As Double
+    Dim validCount As Long
+    Dim demandStdDev As Double
+    Dim forecastError As Double
+    Dim z95 As Double, z99 As Double
+    Dim demandDuringLT As Double
+
+    ' Z-scores for service levels
+    z95 = 1.65  ' 95% service level (5% stockout risk)
+    z99 = 2.33  ' 99% service level (1% stockout risk)
+
+    ' Default lead time if not specified
+    If leadTimePeriods < 1 Then leadTimePeriods = 1
+
+    n = UBound(data) - LBound(data) + 1
+
+    ' Calculate average demand (excluding zeros)
+    sum = 0
+    validCount = 0
+    For i = LBound(data) To UBound(data)
+        If data(i) > 0 Then
+            sum = sum + data(i)
+            validCount = validCount + 1
+        End If
+    Next i
+
+    If validCount > 0 Then
+        avgDemand = sum / validCount
+    Else
+        avgDemand = 0
+        safetyStock95 = 0
+        safetyStock99 = 0
+        reorderPoint95 = 0
+        reorderPoint99 = 0
+        stockoutRisk = 50 ' Unknown
+        Exit Sub
+    End If
+
+    ' Use forecast RMSE as demand variability estimate
+    ' RMSE captures forecast error which includes demand variability
+    forecastError = forecastResult.RMSE
+
+    ' If RMSE is zero or invalid, calculate from actual data
+    If forecastError <= 0 Or forecastError > avgDemand * 2 Then
+        ' Calculate standard deviation of demand
+        Dim sumSquaredDiff As Double
+        sumSquaredDiff = 0
+        For i = LBound(data) To UBound(data)
+            If data(i) > 0 Then
+                sumSquaredDiff = sumSquaredDiff + (data(i) - avgDemand) ^ 2
+            End If
+        Next i
+        If validCount > 1 Then
+            demandStdDev = Sqr(sumSquaredDiff / (validCount - 1))
+        Else
+            demandStdDev = avgDemand * 0.3 ' Assume 30% CV
+        End If
+        forecastError = demandStdDev
+    End If
+
+    ' Safety stock formula: SS = Z × σ × √(LT)
+    ' σ = forecast error (RMSE)
+    ' LT = lead time in periods
+    Dim sigma_LT As Double
+    sigma_LT = forecastError * Sqr(leadTimePeriods)
+
+    safetyStock95 = z95 * sigma_LT
+    safetyStock99 = z99 * sigma_LT
+
+    ' Reorder point = Demand during lead time + Safety stock
+    demandDuringLT = avgDemand * leadTimePeriods
+    reorderPoint95 = demandDuringLT + safetyStock95
+    reorderPoint99 = demandDuringLT + safetyStock99
+
+    ' Estimate stockout risk
+    ' If current inventory is zero, risk is based on demand variability
+    ' Higher CV = higher risk
+    Dim cv As Double
+    If avgDemand > 0 Then
+        cv = (forecastError / avgDemand) * 100
+    Else
+        cv = 50
+    End If
+
+    ' Map CV to stockout risk
+    ' Low CV (< 20%) → Low risk (< 10%)
+    ' Medium CV (20-50%) → Medium risk (10-25%)
+    ' High CV (> 50%) → High risk (> 25%)
+    If cv < 20 Then
+        stockoutRisk = 5 + cv * 0.25
+    ElseIf cv < 50 Then
+        stockoutRisk = 10 + (cv - 20) * 0.5
+    Else
+        stockoutRisk = WorksheetFunction.Min(50, 25 + (cv - 50) * 0.3)
+    End If
+End Sub
+
+Private Sub CalculateForecastValueAtRisk(ByRef forecastResult As TimeSeriesAnalysis.ForecastResult, _
+                                         ByRef forecastP5 As Double, _
+                                         ByRef forecastP10 As Double, _
+                                         ByRef forecastP90 As Double, _
+                                         ByRef downsideRisk As Double)
+    ' Calculate Forecast Value at Risk metrics
+    ' Uses forecast distribution to estimate percentiles and downside risk
+    ' P5 = 5th percentile (only 5% chance demand will be below this)
+    ' P10 = 10th percentile
+    ' P90 = 90th percentile (only 10% chance demand will exceed this)
+    ' Downside risk = expected shortfall below median
+
+    Dim i As Long
+    Dim horizon As Integer
+    Dim pointForecast As Double
+    Dim lowerCI As Double
+    Dim upperCI As Double
+    Dim stdError As Double
+    Dim z5 As Double, z10 As Double, z90 As Double
+
+    ' Z-scores for percentiles (assuming normal distribution)
+    z5 = -1.645   ' 5th percentile
+    z10 = -1.282  ' 10th percentile
+    z90 = 1.282   ' 90th percentile
+
+    horizon = UBound(forecastResult.ForecastValues) - LBound(forecastResult.ForecastValues) + 1
+
+    If horizon < 1 Then
+        forecastP5 = 0
+        forecastP10 = 0
+        forecastP90 = 0
+        downsideRisk = 0
+        Exit Sub
+    End If
+
+    ' Use first period forecast for simplicity (most critical period)
+    pointForecast = forecastResult.ForecastValues(1)
+    lowerCI = forecastResult.Lower95(1)
+    upperCI = forecastResult.Upper95(1)
+
+    ' Estimate standard error from 95% CI
+    ' CI = forecast ± 1.96 × SE
+    ' SE = (Upper - Lower) / (2 × 1.96)
+    stdError = (upperCI - lowerCI) / (2 * 1.96)
+
+    If stdError <= 0 Then
+        ' No uncertainty - use point forecast
+        forecastP5 = pointForecast
+        forecastP10 = pointForecast
+        forecastP90 = pointForecast
+        downsideRisk = 0
+        Exit Sub
+    End If
+
+    ' Calculate percentiles
+    forecastP5 = pointForecast + z5 * stdError
+    forecastP10 = pointForecast + z10 * stdError
+    forecastP90 = pointForecast + z90 * stdError
+
+    ' Ensure non-negative forecasts
+    If forecastP5 < 0 Then forecastP5 = 0
+    If forecastP10 < 0 Then forecastP10 = 0
+
+    ' Downside risk = Expected shortfall below median
+    ' For normal distribution: E[X | X < median] = median - σ × √(2/π)
+    ' Approximation: median ≈ mean for symmetric distribution
+    downsideRisk = stdError * Sqr(2 / WorksheetFunction.Pi())
+End Sub
+
+Private Function GenerateModelExplanation(ByRef summary As ComponentSummary) As String
+    ' Generate human-readable explanation for why this model was selected
+    Dim explanation As String
+    Dim reason As String
+
+    ' Start with pattern-based reasoning
+    Select Case summary.PatternType
+        Case "Stable"
+            reason = "Stable pattern detected (low volatility). "
+        Case "Trending"
+            reason = "Strong " & LCase(summary.TrendDirection) & " trend detected. "
+        Case "Seasonal"
+            reason = "Seasonal pattern detected (" & Format(summary.SeasonalStrength, "0") & "% strength). "
+        Case "Mixed (Trend+Seasonal)"
+            reason = "Complex pattern: both trend and seasonality present. "
+        Case "Intermittent"
+            reason = "Intermittent demand pattern (" & Format(summary.MissingPct, "0") & "% zeros). "
+        Case "Volatile"
+            reason = "High volatility (CV=" & Format(summary.VolatilityIndex, "0") & "%). "
+        Case Else
+            reason = "Variable demand pattern. "
+    End Select
+
+    ' Add model-specific explanation
+    If InStr(summary.BestModel, "Top3") > 0 Then
+        reason = reason & "Ensemble of 3 best models for robustness."
+    ElseIf InStr(summary.BestModel, "Croston") > 0 Then
+        reason = reason & "Croston method optimal for intermittent demand."
+    ElseIf InStr(summary.BestModel, "Holt-Winters") > 0 Or InStr(summary.BestModel, "HW") > 0 Then
+        reason = reason & "Holt-Winters captures trend+seasonality."
+    ElseIf InStr(summary.BestModel, "SES") > 0 Then
+        reason = reason & "Simple exponential smoothing sufficient."
+    ElseIf InStr(summary.BestModel, "Theta") > 0 Then
+        reason = reason & "Theta method effective for this pattern."
+    ElseIf InStr(summary.BestModel, "ARIMA") > 0 Then
+        reason = reason & "ARIMA model fits autocorrelation structure."
+    ElseIf InStr(summary.BestModel, "Ensemble") > 0 Then
+        reason = reason & "Ensemble method reduces forecast error."
+    ElseIf InStr(summary.BestModel, "Linear Trend") > 0 Then
+        reason = reason & "Linear trend provides best fit."
+    ElseIf InStr(summary.BestModel, "Moving Average") > 0 Then
+        reason = reason & "Moving average smooths fluctuations."
+    ElseIf InStr(summary.BestModel, "Exponential Trend") > 0 Then
+        reason = reason & "Exponential growth pattern detected."
+    Else
+        reason = reason & summary.BestModel & " performed best in testing."
+    End If
+
+    ' Add value-add information
+    If summary.ForecastValueAdd > 30 Then
+        reason = reason & " Significant improvement over naive baseline."
+    ElseIf summary.ForecastValueAdd < 0 Then
+        reason = reason & " WARNING: Naive forecast may be better!"
+    End If
+
+    GenerateModelExplanation = reason
+End Function
+
+Private Function DetermineModelConfidence(ByRef summary As ComponentSummary) As String
+    ' Determine confidence level in model selection
+    ' Based on data quality, forecast accuracy, and consistency
+
+    Dim confidenceScore As Double
+    confidenceScore = 100
+
+    ' Penalize for poor data quality
+    confidenceScore = confidenceScore - (100 - summary.DataQualityScore) * 0.5
+
+    ' Penalize for poor accuracy
+    If summary.BestMAPE > 30 Then
+        confidenceScore = confidenceScore - 30
+    ElseIf summary.BestMAPE > 20 Then
+        confidenceScore = confidenceScore - 15
+    End If
+
+    ' Penalize for unstable backtests
+    If summary.BacktestReliability = "✗ Unstable" Then
+        confidenceScore = confidenceScore - 20
+    ElseIf summary.BacktestReliability = "~ Variable" Then
+        confidenceScore = confidenceScore - 10
+    End If
+
+    ' Penalize for low forecast value add
+    If summary.ForecastValueAdd < 0 Then
+        confidenceScore = confidenceScore - 25
+    ElseIf summary.ForecastValueAdd < 10 Then
+        confidenceScore = confidenceScore - 10
+    End If
+
+    ' Classify confidence
+    If confidenceScore >= 70 Then
+        DetermineModelConfidence = "High"
+    ElseIf confidenceScore >= 50 Then
+        DetermineModelConfidence = "Medium"
+    Else
+        DetermineModelConfidence = "Low"
     End If
 End Function
