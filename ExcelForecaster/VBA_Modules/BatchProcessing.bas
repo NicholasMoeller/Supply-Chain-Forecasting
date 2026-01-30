@@ -31,12 +31,21 @@ Public Type ComponentSummary
     HW_MBE As Double
 
     ' Best Model
-    BestModel As String ' "SES" or "HW"
+    BestModel As String
     BestMAPE As Double
 
     ' Classification
     AccuracyClass As String ' "Excellent", "Good", "Acceptable", "Poor", "ERROR"
     ABCClass As String ' "A", "B", "C" based on forecast difficulty
+
+    ' NEW: Quality Warnings & Benchmarks
+    QualityFlag As String ' "🟢 GOOD", "🟡 WARNING", "🔴 CRITICAL"
+    WarningMessage As String ' Specific issues identified
+    NaiveMAPE As Double ' Naive forecast benchmark
+    SeasonalNaiveMAPE As Double ' Seasonal naive benchmark
+    ForecastValueAdd As Double ' Improvement over naive (%)
+    BiasDirection As String ' "Over-forecasting", "Under-forecasting", "Unbiased"
+    BiasAmount As Double ' Mean bias error
 End Type
 
 ' Global array to store all component results
@@ -314,6 +323,65 @@ Private Sub ProcessSingleComponent(componentName As String, data() As Double, _
         summary.AccuracyClass = "Poor"
     End If
 
+    ' NEW: Calculate Naive Benchmarks
+    summary.NaiveMAPE = CalculateNaiveMAPE(data)
+    summary.SeasonalNaiveMAPE = CalculateSeasonalNaiveMAPE(data, CInt(frequency))
+
+    ' Calculate Forecast Value Add (improvement over naive)
+    If summary.NaiveMAPE > 0 Then
+        summary.ForecastValueAdd = ((summary.NaiveMAPE - summary.BestMAPE) / summary.NaiveMAPE) * 100
+    Else
+        summary.ForecastValueAdd = 0
+    End If
+
+    ' NEW: Detect Bias
+    Dim absB As Double
+    absB = Abs(bestResult.MBE)
+    If bestResult.MBE > 0 Then
+        summary.BiasDirection = "Under-forecasting"
+    ElseIf bestResult.MBE < 0 Then
+        summary.BiasDirection = "Over-forecasting"
+    Else
+        summary.BiasDirection = "Unbiased"
+    End If
+    summary.BiasAmount = bestResult.MBE
+
+    ' NEW: Quality Flags & Warnings
+    Dim warnings As String
+    warnings = ""
+
+    ' Critical quality issues
+    If summary.BestMAPE > 50 Then
+        summary.QualityFlag = "🔴 CRITICAL"
+        warnings = "MAPE > 50% - Manual review needed"
+    ElseIf summary.BestMAPE > 20 Then
+        summary.QualityFlag = "🟡 WARNING"
+        warnings = "MAPE 20-50% - Check for outliers/shifts"
+    Else
+        summary.QualityFlag = "🟢 GOOD"
+        warnings = "Forecast reliable"
+    End If
+
+    ' Check if forecast is worse than naive
+    If summary.ForecastValueAdd < 0 Then
+        summary.QualityFlag = "🟡 WARNING"
+        warnings = warnings & "; Worse than naive forecast"
+    End If
+
+    ' Check for bias
+    If absB > summary.SES_MAE * 0.5 Then
+        If summary.QualityFlag = "🟢 GOOD" Then summary.QualityFlag = "🟡 WARNING"
+        warnings = warnings & "; High bias (" & summary.BiasDirection & ")"
+    End If
+
+    ' Check for insufficient data
+    If validPoints < frequency * 3 Then
+        If summary.QualityFlag = "🟢 GOOD" Then summary.QualityFlag = "🟡 WARNING"
+        warnings = warnings & "; Limited data"
+    End If
+
+    summary.WarningMessage = warnings
+
 StoreResults:
     ' Store results
     ComponentResults(resultIndex) = summary
@@ -378,15 +446,24 @@ Private Sub CreateSummaryWorksheet()
     ws.Cells(1, 19).Value = "HW RMSE"
     ws.Cells(1, 20).Value = "HW MBE"
 
+    ' NEW: Quality, Warnings, and Benchmark Headers
+    ws.Cells(1, 21).Value = "Quality Flag"
+    ws.Cells(1, 22).Value = "Warning Message"
+    ws.Cells(1, 23).Value = "Naive MAPE (%)"
+    ws.Cells(1, 24).Value = "Seasonal Naive MAPE (%)"
+    ws.Cells(1, 25).Value = "Forecast Value Add (%)"
+    ws.Cells(1, 26).Value = "Bias Direction"
+    ws.Cells(1, 27).Value = "Bias Amount"
+
     ' Format headers
-    With ws.Range("A1:T1")
+    With ws.Range("A1:AA1")
         .Font.Bold = True
         .Interior.Color = RGB(68, 114, 196)
         .Font.Color = RGB(255, 255, 255)
         .HorizontalAlignment = xlCenter
     End With
 
-    ws.Columns("A:T").AutoFit
+    ws.Columns("A:AA").AutoFit
 End Sub
 
 ' ============================================================================
@@ -430,6 +507,32 @@ Private Sub WriteSummaryRow(rowIndex As Long, summary As ComponentSummary)
     ws.Cells(row, 18).Value = summary.HW_MAE
     ws.Cells(row, 19).Value = summary.HW_RMSE
     ws.Cells(row, 20).Value = summary.HW_MBE
+
+    ' NEW: Quality flags, warnings, and benchmarks
+    ws.Cells(row, 21).Value = summary.QualityFlag
+    ws.Cells(row, 22).Value = summary.WarningMessage
+    ws.Cells(row, 23).Value = summary.NaiveMAPE
+    ws.Cells(row, 24).Value = summary.SeasonalNaiveMAPE
+    ws.Cells(row, 25).Value = summary.ForecastValueAdd
+    ws.Cells(row, 26).Value = summary.BiasDirection
+    ws.Cells(row, 27).Value = summary.BiasAmount
+
+    ' Color code quality flag
+    If summary.QualityFlag = "🟢 GOOD" Then
+        ws.Cells(row, 21).Interior.Color = RGB(146, 208, 80) ' Green
+    ElseIf summary.QualityFlag = "🟡 WARNING" Then
+        ws.Cells(row, 21).Interior.Color = RGB(255, 217, 102) ' Yellow
+    ElseIf summary.QualityFlag = "🔴 CRITICAL" Then
+        ws.Cells(row, 21).Interior.Color = RGB(255, 0, 0) ' Red
+        ws.Cells(row, 21).Font.Color = RGB(255, 255, 255)
+    End If
+
+    ' Color code forecast value add
+    If summary.ForecastValueAdd > 20 Then
+        ws.Cells(row, 25).Interior.Color = RGB(146, 208, 80) ' Excellent improvement
+    ElseIf summary.ForecastValueAdd < 0 Then
+        ws.Cells(row, 25).Interior.Color = RGB(255, 192, 203) ' Worse than naive!
+    End If
 
     ' Color code accuracy class
     If Not summary.HasError Then
@@ -1262,3 +1365,55 @@ Private Sub CreatePortfolioForecastSheet(actual() As Double, fitted() As Double,
     ws.Cells(UBound(actual) + UBound(forecast) + 3, 1).Value = "Note: Portfolio values are aggregated totals across all components"
     ws.Cells(UBound(actual) + UBound(forecast) + 3, 1).Font.Italic = True
 End Sub
+
+' ============================================================================
+' NAIVE FORECAST BENCHMARKS - Prove sophisticated methods add value
+' ============================================================================
+
+Private Function CalculateNaiveMAPE(ByRef data() As Double) As Double
+    ' Naive forecast: tomorrow = today
+    ' Forecast(t) = Actual(t-1)
+    Dim i As Long
+    Dim sumAbsPercentError As Double
+    Dim validCount As Long
+
+    sumAbsPercentError = 0
+    validCount = 0
+
+    For i = LBound(data) + 1 To UBound(data)
+        If data(i) <> 0 Then
+            sumAbsPercentError = sumAbsPercentError + Abs((data(i) - data(i - 1)) / data(i)) * 100
+            validCount = validCount + 1
+        End If
+    Next i
+
+    If validCount > 0 Then
+        CalculateNaiveMAPE = sumAbsPercentError / validCount
+    Else
+        CalculateNaiveMAPE = 9999
+    End If
+End Function
+
+Private Function CalculateSeasonalNaiveMAPE(ByRef data() As Double, frequency As Integer) As Double
+    ' Seasonal naive forecast: tomorrow = same period last cycle
+    ' Forecast(t) = Actual(t - frequency)
+    Dim i As Long
+    Dim sumAbsPercentError As Double
+    Dim validCount As Long
+
+    sumAbsPercentError = 0
+    validCount = 0
+
+    For i = LBound(data) + frequency To UBound(data)
+        If data(i) <> 0 And i - frequency >= LBound(data) Then
+            sumAbsPercentError = sumAbsPercentError + Abs((data(i) - data(i - frequency)) / data(i)) * 100
+            validCount = validCount + 1
+        End If
+    Next i
+
+    If validCount > 0 Then
+        CalculateSeasonalNaiveMAPE = sumAbsPercentError / validCount
+    Else
+        CalculateSeasonalNaiveMAPE = 9999
+    End If
+End Function
