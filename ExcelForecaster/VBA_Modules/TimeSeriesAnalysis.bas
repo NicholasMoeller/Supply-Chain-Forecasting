@@ -1110,17 +1110,126 @@ Public Function AutoForecast(ByRef tsData As TimeSeriesData, _
     If Err.Number <> 0 Then results(10).MAPE = 9999
     On Error GoTo ErrorHandler
     
-    ' Find best model (lowest MAPE)
-    bestMAPE = results(1).MAPE
-    bestIndex = 1
-    For i = 2 To modelCount
-        If results(i).MAPE < bestMAPE And results(i).MAPE > 0 Then
-            bestMAPE = results(i).MAPE
-            bestIndex = i
+    ' Sort models by MAPE to find top 3
+    Dim sortedIndices() As Integer
+    ReDim sortedIndices(1 To modelCount)
+    For i = 1 To modelCount
+        sortedIndices(i) = i
+    Next i
+
+    ' Bubble sort by MAPE
+    Dim temp As Integer
+    Dim j As Integer
+    For i = 1 To modelCount - 1
+        For j = i + 1 To modelCount
+            If results(sortedIndices(i)).MAPE > results(sortedIndices(j)).MAPE Then
+                temp = sortedIndices(i)
+                sortedIndices(i) = sortedIndices(j)
+                sortedIndices(j) = temp
+            End If
+        Next j
+    Next i
+
+    ' Combine top 3 models for even better accuracy
+    Dim combinedResult As ForecastResult
+    Dim topCount As Integer
+    topCount = WorksheetFunction.Min(3, modelCount) ' Top 3 or fewer
+
+    ' Calculate inverse MAPE weights
+    Dim weights() As Double
+    ReDim weights(1 To topCount)
+    Dim totalWeight As Double
+    totalWeight = 0
+
+    For i = 1 To topCount
+        If results(sortedIndices(i)).MAPE > 0 Then
+            weights(i) = 1 / results(sortedIndices(i)).MAPE
+            totalWeight = totalWeight + weights(i)
         End If
     Next i
-    
-    AutoForecast = results(bestIndex)
+
+    ' Normalize weights
+    If totalWeight > 0 Then
+        For i = 1 To topCount
+            weights(i) = weights(i) / totalWeight
+        Next i
+    Else
+        ' Equal weights if issues
+        For i = 1 To topCount
+            weights(i) = 1 / topCount
+        Next i
+    End If
+
+    ' Combine forecasts
+    combinedResult = results(sortedIndices(1)) ' Start with best
+
+    ' Initialize forecast arrays
+    For i = 1 To horizon
+        combinedResult.ForecastValues(i) = 0
+        combinedResult.Lower95(i) = 0
+        combinedResult.Upper95(i) = 0
+    Next i
+
+    ' Weighted combination
+    For i = 1 To topCount
+        Dim idx As Integer
+        idx = sortedIndices(i)
+
+        For j = 1 To horizon
+            combinedResult.ForecastValues(j) = combinedResult.ForecastValues(j) + weights(i) * results(idx).ForecastValues(j)
+            combinedResult.Lower95(j) = combinedResult.Lower95(j) + weights(i) * results(idx).Lower95(j)
+            combinedResult.Upper95(j) = combinedResult.Upper95(j) + weights(i) * results(idx).Upper95(j)
+        Next j
+    Next i
+
+    ' Combined fitted values
+    For i = LBound(cleanedData.Values) To UBound(cleanedData.Values)
+        combinedResult.FittedValues(i) = 0
+        combinedResult.Residuals(i) = 0
+    Next i
+
+    For i = 1 To topCount
+        idx = sortedIndices(i)
+        For j = LBound(cleanedData.Values) To UBound(cleanedData.Values)
+            combinedResult.FittedValues(j) = combinedResult.FittedValues(j) + weights(i) * results(idx).FittedValues(j)
+        Next j
+    Next i
+
+    ' Recalculate residuals and metrics
+    For i = LBound(cleanedData.Values) To UBound(cleanedData.Values)
+        combinedResult.Residuals(i) = cleanedData.Values(i) - combinedResult.FittedValues(i)
+    Next i
+
+    combinedResult.MAPE = CalculateMAPE(cleanedData.Values, combinedResult.FittedValues)
+    combinedResult.MAE = CalculateMAE(combinedResult.Residuals)
+    combinedResult.RMSE = CalculateRMSE(combinedResult.Residuals)
+    combinedResult.MBE = CalculateMBE(cleanedData.Values, combinedResult.FittedValues)
+
+    ' Build model name from top 3
+    Dim combinedName As String
+    combinedName = "Top3: " & results(sortedIndices(1)).ModelName
+    If topCount > 1 Then combinedName = combinedName & "+" & results(sortedIndices(2)).ModelName
+    If topCount > 2 Then combinedName = combinedName & "+" & results(sortedIndices(3)).ModelName
+    combinedResult.ModelName = combinedName
+
+    ' Apply bias correction if significant
+    Dim biasCorrect As Double
+    biasCorrect = combinedResult.MBE
+
+    ' Only correct if bias is significant (> 10% of MAE)
+    If Abs(biasCorrect) > combinedResult.MAE * 0.1 Then
+        ' Apply bias correction to forecast
+        For i = 1 To horizon
+            combinedResult.ForecastValues(i) = combinedResult.ForecastValues(i) - biasCorrect
+            combinedResult.Lower95(i) = combinedResult.Lower95(i) - biasCorrect
+            combinedResult.Upper95(i) = combinedResult.Upper95(i) - biasCorrect
+        Next i
+
+        ' Mark that bias correction was applied
+        combinedResult.ModelName = combinedResult.ModelName & " (bias-corrected)"
+    End If
+
+    AutoForecast = combinedResult
     Exit Function
     
 ErrorHandler:
@@ -2095,6 +2204,278 @@ Private Function CalculateRecentMAPE(ByRef actual() As Double, _
         CalculateRecentMAPE = sumAbsPercentError / validCount
     Else
         CalculateRecentMAPE = 100
+    End If
+End Function
+
+' ============================================================================
+' AUTOMATIC SEASONALITY DETECTION - Eliminates user errors!
+' ============================================================================
+
+' Type for seasonality detection results
+Public Type SeasonalityInfo
+    HasSeasonality As Boolean
+    DetectedFrequency As Integer
+    SeasonalType As String ' "additive", "multiplicative", "none"
+    Confidence As Double ' 0-100%
+End Type
+
+Public Function DetectSeasonality(ByRef tsData As TimeSeriesData) As SeasonalityInfo
+    ' Automatically detect if data has seasonality and what type
+    Dim result As SeasonalityInfo
+    Dim Values() As Double
+    Dim n As Long
+
+    Values = tsData.Values
+    n = UBound(Values) - LBound(Values) + 1
+
+    ' Initialize defaults
+    result.HasSeasonality = False
+    result.DetectedFrequency = 1
+    result.SeasonalType = "none"
+    result.Confidence = 0
+
+    ' Need at least 2 cycles to detect seasonality
+    If n < 24 Then
+        DetectSeasonality = result
+        Exit Function
+    End If
+
+    ' Step 1: Detect frequency from ACF peaks
+    result.DetectedFrequency = DetectFrequencyFromACF(Values)
+
+    ' Step 2: Test if seasonality is significant
+    If result.DetectedFrequency > 1 Then
+        Dim seasonalStrength As Double
+        seasonalStrength = TestSeasonalStrength(Values, result.DetectedFrequency)
+
+        If seasonalStrength > 0.3 Then ' 30% threshold
+            result.HasSeasonality = True
+            result.Confidence = seasonalStrength * 100
+
+            ' Step 3: Determine additive vs multiplicative
+            result.SeasonalType = DetectSeasonalType(Values, result.DetectedFrequency)
+        End If
+    End If
+
+    DetectSeasonality = result
+End Function
+
+Private Function DetectFrequencyFromACF(ByRef Values() As Double) As Integer
+    ' Find dominant frequency from ACF peaks
+    Dim maxLag As Integer
+    Dim n As Long
+    Dim acf() As Double
+    Dim i As Long
+    Dim maxACF As Double
+    Dim maxLag_idx As Integer
+
+    n = UBound(Values) - LBound(Values) + 1
+    maxLag = WorksheetFunction.Min(Int(n / 2), 52) ' Max 52 for weekly data
+
+    If maxLag < 4 Then
+        DetectFrequencyFromACF = 1
+        Exit Function
+    End If
+
+    acf = CalculateACF(Values, maxLag)
+
+    ' Find strongest ACF peak (ignoring lag 1)
+    maxACF = 0
+    maxLag_idx = 1
+
+    For i = 2 To UBound(acf)
+        If acf(i) > maxACF Then
+            maxACF = acf(i)
+            maxLag_idx = i
+        End If
+    Next i
+
+    ' Common frequencies: 4 (quarterly), 7 (weekly), 12 (monthly), 52 (weekly/yearly)
+    ' Snap to common frequencies if close
+    Dim commonFreqs() As Variant
+    commonFreqs = Array(4, 7, 12, 24, 52)
+
+    Dim closestFreq As Integer
+    Dim minDiff As Integer
+    Dim diff As Integer
+
+    closestFreq = maxLag_idx
+    minDiff = 9999
+
+    For i = LBound(commonFreqs) To UBound(commonFreqs)
+        diff = Abs(maxLag_idx - commonFreqs(i))
+        If diff < minDiff And diff < 3 Then ' Within 3 lags
+            minDiff = diff
+            closestFreq = commonFreqs(i)
+        End If
+    Next i
+
+    If maxACF > 0.2 And closestFreq > 1 Then
+        DetectFrequencyFromACF = closestFreq
+    Else
+        DetectFrequencyFromACF = 1 ' No seasonality
+    End If
+End Function
+
+Private Function TestSeasonalStrength(ByRef Values() As Double, frequency As Integer) As Double
+    ' Measure strength of seasonal pattern (0-1)
+    Dim n As Long
+    Dim i As Long, j As Long
+    Dim cycleAvgs() As Double
+    Dim grandAvg As Double
+    Dim seasonalVar As Double
+    Dim totalVar As Double
+    Dim count As Long
+
+    n = UBound(Values) - LBound(Values) + 1
+
+    If n < frequency * 2 Then
+        TestSeasonalStrength = 0
+        Exit Function
+    End If
+
+    ' Calculate average for each season
+    ReDim cycleAvgs(1 To frequency)
+    Dim cycleCounts() As Long
+    ReDim cycleCounts(1 To frequency)
+
+    For i = LBound(Values) To UBound(Values)
+        j = ((i - LBound(Values)) Mod frequency) + 1
+        cycleAvgs(j) = cycleAvgs(j) + Values(i)
+        cycleCounts(j) = cycleCounts(j) + 1
+    Next i
+
+    For j = 1 To frequency
+        If cycleCounts(j) > 0 Then
+            cycleAvgs(j) = cycleAvgs(j) / cycleCounts(j)
+        End If
+    Next j
+
+    ' Calculate grand average
+    grandAvg = 0
+    For i = LBound(Values) To UBound(Values)
+        grandAvg = grandAvg + Values(i)
+    Next i
+    grandAvg = grandAvg / n
+
+    ' Calculate seasonal variance
+    seasonalVar = 0
+    For j = 1 To frequency
+        If cycleCounts(j) > 0 Then
+            seasonalVar = seasonalVar + (cycleAvgs(j) - grandAvg) ^ 2
+        End If
+    Next j
+
+    ' Calculate total variance
+    totalVar = 0
+    For i = LBound(Values) To UBound(Values)
+        totalVar = totalVar + (Values(i) - grandAvg) ^ 2
+    Next i
+
+    If totalVar > 0 Then
+        TestSeasonalStrength = Sqr(seasonalVar / totalVar)
+    Else
+        TestSeasonalStrength = 0
+    End If
+
+    ' Cap at 1
+    If TestSeasonalStrength > 1 Then TestSeasonalStrength = 1
+End Function
+
+Private Function DetectSeasonalType(ByRef Values() As Double, frequency As Integer) As String
+    ' Determine if seasonality is additive or multiplicative
+    ' Multiplicative: seasonal variation proportional to level
+    ' Additive: seasonal variation constant
+
+    Dim n As Long
+    Dim i As Long, j As Long
+    Dim cycleStdDevs() As Double
+    Dim cycleMeans() As Double
+    Dim cycleCounts() As Long
+    Dim cv As Double ' Coefficient of variation
+    Dim correlation As Double
+
+    n = UBound(Values) - LBound(Values) + 1
+
+    If n < frequency * 2 Then
+        DetectSeasonalType = "additive"
+        Exit Function
+    End If
+
+    ' Calculate mean and std dev for each seasonal period
+    ReDim cycleMeans(1 To frequency)
+    ReDim cycleStdDevs(1 To frequency)
+    ReDim cycleCounts(1 To frequency)
+
+    Dim cycleSums() As Double
+    ReDim cycleSums(1 To frequency)
+
+    ' First pass: means
+    For i = LBound(Values) To UBound(Values)
+        j = ((i - LBound(Values)) Mod frequency) + 1
+        cycleSums(j) = cycleSums(j) + Values(i)
+        cycleCounts(j) = cycleCounts(j) + 1
+    Next i
+
+    For j = 1 To frequency
+        If cycleCounts(j) > 0 Then
+            cycleMeans(j) = cycleSums(j) / cycleCounts(j)
+        End If
+    Next j
+
+    ' Second pass: std devs
+    For i = LBound(Values) To UBound(Values)
+        j = ((i - LBound(Values)) Mod frequency) + 1
+        cycleStdDevs(j) = cycleStdDevs(j) + (Values(i) - cycleMeans(j)) ^ 2
+    Next i
+
+    For j = 1 To frequency
+        If cycleCounts(j) > 1 Then
+            cycleStdDevs(j) = Sqr(cycleStdDevs(j) / (cycleCounts(j) - 1))
+        End If
+    Next j
+
+    ' Calculate correlation between means and std devs
+    ' High correlation → multiplicative
+    ' Low correlation → additive
+    correlation = CalculateCorrelation(cycleMeans, cycleStdDevs, frequency)
+
+    If correlation > 0.5 Then
+        DetectSeasonalType = "multiplicative"
+    Else
+        DetectSeasonalType = "additive"
+    End If
+End Function
+
+Private Function CalculateCorrelation(ByRef x() As Double, ByRef y() As Double, n As Integer) As Double
+    Dim i As Long
+    Dim sumX As Double, sumY As Double
+    Dim sumXY As Double, sumX2 As Double, sumY2 As Double
+    Dim meanX As Double, meanY As Double
+    Dim numerator As Double, denominator As Double
+
+    sumX = 0: sumY = 0: sumXY = 0: sumX2 = 0: sumY2 = 0
+
+    For i = 1 To n
+        sumX = sumX + x(i)
+        sumY = sumY + y(i)
+    Next i
+
+    meanX = sumX / n
+    meanY = sumY / n
+
+    For i = 1 To n
+        numerator = numerator + (x(i) - meanX) * (y(i) - meanY)
+        sumX2 = sumX2 + (x(i) - meanX) ^ 2
+        sumY2 = sumY2 + (y(i) - meanY) ^ 2
+    Next i
+
+    denominator = Sqr(sumX2 * sumY2)
+
+    If denominator > 0 Then
+        CalculateCorrelation = numerator / denominator
+    Else
+        CalculateCorrelation = 0
     End If
 End Function
 
