@@ -1502,8 +1502,8 @@ Private Sub GeneratePortfolioAnalysis(frequency As Long, seasonalType As String)
         totalFitted = 0
         For j = 1 To ComponentCount
             If Not ComponentResults(j).HasError Then
-                If i <= UBound(ComponentResults(j).result.FittedValues) Then
-                    totalFitted = totalFitted + ComponentResults(j).result.FittedValues(i)
+                If i <= UBound(ComponentForecasts(j).FittedValues) Then
+                    totalFitted = totalFitted + ComponentForecasts(j).FittedValues(i)
                 End If
             End If
         Next j
@@ -1516,8 +1516,8 @@ Private Sub GeneratePortfolioAnalysis(frequency As Long, seasonalType As String)
         totalForecast = 0
         For j = 1 To ComponentCount
             If Not ComponentResults(j).HasError Then
-                If i <= UBound(ComponentResults(j).result.ForecastValues) Then
-                    totalForecast = totalForecast + ComponentResults(j).result.ForecastValues(i)
+                If i <= UBound(ComponentForecasts(j).ForecastValues) Then
+                    totalForecast = totalForecast + ComponentForecasts(j).ForecastValues(i)
                 End If
             End If
         Next j
