@@ -51,6 +51,12 @@ Public Type ComponentSummary
     BacktestMAPE As Double ' Average MAPE from historical backtests
     BacktestCount As Integer ' Number of backtest origins tested
     BacktestReliability As String ' "✓ Consistent", "~ Variable", "✗ Unstable"
+
+    ' NEW: Data Quality Metrics
+    DataQualityScore As Double ' 0-100 quality score
+    MissingPct As Double ' Percentage of missing/zero values
+    OutlierPct As Double ' Percentage of outliers detected
+    VolatilityIndex As Double ' Coefficient of variation
 End Type
 
 ' Global array to store all component results
@@ -225,6 +231,9 @@ Public Sub ProcessAllComponents(frequency As Long, horizon As Long, seasonalType
     ' Calculate portfolio-level metrics and create portfolio forecast chart
     Call GeneratePortfolioAnalysis(frequency, seasonalType)
 
+    ' Generate component correlation analysis
+    Call GenerateCorrelationAnalysis(ws)
+
     ' Create detailed diagnostics for worst/best components if requested
     If fullDiagnostics Then
         Call CreateTopBottomDiagnostics(ws, frequency, horizon, seasonalType)
@@ -354,6 +363,9 @@ Private Sub ProcessSingleComponent(componentName As String, data() As Double, _
     ' NEW: Perform Historical Backtesting
     Call PerformBacktest(data, CInt(frequency), seasonalType, summary.BacktestMAPE, summary.BacktestCount, summary.BacktestReliability)
 
+    ' NEW: Data Quality Analysis
+    Call AnalyzeDataQuality(data, summary.DataQualityScore, summary.MissingPct, summary.OutlierPct, summary.VolatilityIndex)
+
     ' NEW: Quality Flags & Warnings
     Dim warnings As String
     warnings = ""
@@ -468,15 +480,21 @@ Private Sub CreateSummaryWorksheet()
     ws.Cells(1, 29).Value = "Backtest Origins"
     ws.Cells(1, 30).Value = "Reliability"
 
+    ' NEW: Data Quality Headers
+    ws.Cells(1, 31).Value = "Data Quality Score"
+    ws.Cells(1, 32).Value = "Missing/Zero %"
+    ws.Cells(1, 33).Value = "Outlier %"
+    ws.Cells(1, 34).Value = "Volatility Index"
+
     ' Format headers
-    With ws.Range("A1:AD1")
+    With ws.Range("A1:AH1")
         .Font.Bold = True
         .Interior.Color = RGB(68, 114, 196)
         .Font.Color = RGB(255, 255, 255)
         .HorizontalAlignment = xlCenter
     End With
 
-    ws.Columns("A:AD").AutoFit
+    ws.Columns("A:AH").AutoFit
 End Sub
 
 ' ============================================================================
@@ -548,6 +566,24 @@ Private Sub WriteSummaryRow(rowIndex As Long, summary As ComponentSummary)
         ws.Cells(row, 28).Value = "N/A"
         ws.Cells(row, 29).Value = "N/A"
         ws.Cells(row, 30).Value = "N/A"
+    End If
+
+    ' NEW: Data Quality Metrics
+    ws.Cells(row, 31).Value = Format(summary.DataQualityScore, "0.0")
+    ws.Cells(row, 32).Value = Format(summary.MissingPct, "0.0") & "%"
+    ws.Cells(row, 33).Value = Format(summary.OutlierPct, "0.0") & "%"
+    ws.Cells(row, 34).Value = Format(summary.VolatilityIndex, "0.0")
+
+    ' Color code data quality score
+    If summary.DataQualityScore >= 80 Then
+        ws.Cells(row, 31).Interior.Color = RGB(146, 208, 80) ' Green - Excellent
+    ElseIf summary.DataQualityScore >= 60 Then
+        ws.Cells(row, 31).Interior.Color = RGB(255, 217, 102) ' Yellow - Good
+    ElseIf summary.DataQualityScore >= 40 Then
+        ws.Cells(row, 31).Interior.Color = RGB(255, 192, 0) ' Orange - Fair
+    Else
+        ws.Cells(row, 31).Interior.Color = RGB(255, 0, 0) ' Red - Poor
+        ws.Cells(row, 31).Font.Color = RGB(255, 255, 255)
     End If
 
     ' Color code quality flag
@@ -1305,6 +1341,201 @@ ErrorHandler:
     MsgBox "Error in portfolio analysis: " & Err.Description, vbCritical
 End Sub
 
+Private Sub GenerateCorrelationAnalysis(ws As Worksheet)
+    ' Generate correlation matrix for all components
+    ' Helps identify relationships and potential groupings
+
+    On Error GoTo ErrorHandler
+
+    Dim dataWs As Worksheet
+    Dim i As Long, j As Long, k As Long
+    Dim lastRow As Long
+    Dim correlations() As Double
+    Dim data1() As Double, data2() As Double
+    Dim startRow As Long, startCol As Long
+    Dim correlation As Double
+    Dim maxCorr As Double
+    Dim minCorr As Double
+    Dim corrPair1 As String, corrPair2 As String
+    Dim antiCorrPair1 As String, antiCorrPair2 As String
+
+    Set dataWs = ThisWorkbook.Worksheets("MultiComponentData")
+    lastRow = dataWs.Cells(dataWs.Rows.Count, 1).End(xlUp).Row
+
+    ' Position for correlation matrix (below portfolio metrics)
+    startRow = 12
+    startCol = 28 ' Column AB
+
+    ' Header
+    ws.Cells(startRow, startCol).Value = "CORRELATION ANALYSIS"
+    ws.Cells(startRow, startCol).Font.Bold = True
+    ws.Cells(startRow, startCol).Font.Size = 14
+    ws.Cells(startRow, startCol).Interior.Color = RGB(68, 114, 196)
+    ws.Cells(startRow, startCol).Font.Color = RGB(255, 255, 255)
+
+    ' If only 1 component, skip correlation analysis
+    If ComponentCount <= 1 Then
+        ws.Cells(startRow + 2, startCol).Value = "N/A - Only one component"
+        Exit Sub
+    End If
+
+    ' Calculate correlation matrix
+    ReDim correlations(1 To ComponentCount, 1 To ComponentCount)
+    maxCorr = -1
+    minCorr = 1
+
+    For i = 1 To ComponentCount
+        For j = i To ComponentCount
+            If i = j Then
+                correlations(i, j) = 1 ' Perfect self-correlation
+            Else
+                ' Extract data for both components
+                ReDim data1(1 To lastRow - 1)
+                ReDim data2(1 To lastRow - 1)
+
+                For k = 1 To lastRow - 1
+                    data1(k) = dataWs.Cells(k + 1, i + 1).Value
+                    data2(k) = dataWs.Cells(k + 1, j + 1).Value
+                Next k
+
+                ' Calculate correlation
+                correlation = CalculatePearsonCorrelation(data1, data2)
+                correlations(i, j) = correlation
+                correlations(j, i) = correlation ' Symmetric
+
+                ' Track extremes (excluding self-correlation)
+                If correlation > maxCorr Then
+                    maxCorr = correlation
+                    corrPair1 = ComponentResults(i).ComponentName
+                    corrPair2 = ComponentResults(j).ComponentName
+                End If
+
+                If correlation < minCorr Then
+                    minCorr = correlation
+                    antiCorrPair1 = ComponentResults(i).ComponentName
+                    antiCorrPair2 = ComponentResults(j).ComponentName
+                End If
+            End If
+        Next j
+    Next i
+
+    ' Write insights
+    ws.Cells(startRow + 2, startCol).Value = "Highest Correlation:"
+    ws.Cells(startRow + 2, startCol + 1).Value = Format(maxCorr, "0.00") & " (" & corrPair1 & " - " & corrPair2 & ")"
+    ws.Cells(startRow + 2, startCol + 1).Font.Bold = True
+
+    If maxCorr > 0.8 Then
+        ws.Cells(startRow + 2, startCol + 1).Interior.Color = RGB(255, 217, 102) ' Strong correlation
+        ws.Cells(startRow + 3, startCol).Value = "→ Consider grouping highly correlated components"
+    End If
+
+    ws.Cells(startRow + 4, startCol).Value = "Lowest Correlation:"
+    ws.Cells(startRow + 4, startCol + 1).Value = Format(minCorr, "0.00") & " (" & antiCorrPair1 & " - " & antiCorrPair2 & ")"
+    ws.Cells(startRow + 4, startCol + 1).Font.Bold = True
+
+    If minCorr < -0.5 Then
+        ws.Cells(startRow + 4, startCol + 1).Interior.Color = RGB(255, 192, 203) ' Negative correlation
+        ws.Cells(startRow + 5, startCol).Value = "→ Negative correlation provides natural hedging"
+    End If
+
+    ' Write correlation matrix (only if not too many components)
+    If ComponentCount <= 10 Then
+        Dim matrixStartRow As Long
+        matrixStartRow = startRow + 7
+
+        ws.Cells(matrixStartRow, startCol).Value = "Correlation Matrix:"
+        ws.Cells(matrixStartRow, startCol).Font.Bold = True
+
+        ' Column headers (component names abbreviated)
+        For i = 1 To ComponentCount
+            Dim shortName As String
+            shortName = Left(ComponentResults(i).ComponentName, 8)
+            ws.Cells(matrixStartRow + 1, startCol + i).Value = shortName
+            ws.Cells(matrixStartRow + 1, startCol + i).Orientation = 45 ' Angled text
+            ws.Cells(matrixStartRow + 1, startCol + i).Font.Size = 8
+        Next i
+
+        ' Row headers and correlation values
+        For i = 1 To ComponentCount
+            shortName = Left(ComponentResults(i).ComponentName, 8)
+            ws.Cells(matrixStartRow + 1 + i, startCol).Value = shortName
+            ws.Cells(matrixStartRow + 1 + i, startCol).Font.Size = 8
+
+            For j = 1 To ComponentCount
+                ws.Cells(matrixStartRow + 1 + i, startCol + j).Value = Format(correlations(i, j), "0.00")
+                ws.Cells(matrixStartRow + 1 + i, startCol + j).Font.Size = 8
+
+                ' Color code correlations
+                If i <> j Then
+                    If correlations(i, j) > 0.7 Then
+                        ws.Cells(matrixStartRow + 1 + i, startCol + j).Interior.Color = RGB(146, 208, 80) ' Green - high positive
+                    ElseIf correlations(i, j) < -0.5 Then
+                        ws.Cells(matrixStartRow + 1 + i, startCol + j).Interior.Color = RGB(255, 192, 203) ' Pink - negative
+                    ElseIf Abs(correlations(i, j)) < 0.3 Then
+                        ws.Cells(matrixStartRow + 1 + i, startCol + j).Interior.Color = RGB(242, 242, 242) ' Gray - weak
+                    End If
+                End If
+            Next j
+        Next i
+    Else
+        ws.Cells(startRow + 7, startCol).Value = "(Matrix omitted - too many components)"
+    End If
+
+    Exit Sub
+
+ErrorHandler:
+    ws.Cells(startRow + 2, startCol).Value = "Error calculating correlations: " & Err.Description
+End Sub
+
+Private Function CalculatePearsonCorrelation(ByRef x() As Double, ByRef y() As Double) As Double
+    ' Calculate Pearson correlation coefficient between two series
+    Dim n As Long
+    Dim i As Long
+    Dim sumX As Double, sumY As Double
+    Dim sumXY As Double, sumX2 As Double, sumY2 As Double
+    Dim meanX As Double, meanY As Double
+    Dim numerator As Double, denominator As Double
+    Dim validCount As Long
+
+    n = UBound(x)
+    validCount = 0
+    sumX = 0: sumY = 0: sumXY = 0: sumX2 = 0: sumY2 = 0
+
+    ' Calculate sums (skip zeros)
+    For i = 1 To n
+        If x(i) <> 0 And y(i) <> 0 Then
+            sumX = sumX + x(i)
+            sumY = sumY + y(i)
+            validCount = validCount + 1
+        End If
+    Next i
+
+    If validCount < 2 Then
+        CalculatePearsonCorrelation = 0
+        Exit Function
+    End If
+
+    meanX = sumX / validCount
+    meanY = sumY / validCount
+
+    ' Calculate correlation
+    For i = 1 To n
+        If x(i) <> 0 And y(i) <> 0 Then
+            numerator = numerator + (x(i) - meanX) * (y(i) - meanY)
+            sumX2 = sumX2 + (x(i) - meanX) ^ 2
+            sumY2 = sumY2 + (y(i) - meanY) ^ 2
+        End If
+    Next i
+
+    denominator = Sqr(sumX2 * sumY2)
+
+    If denominator > 0 Then
+        CalculatePearsonCorrelation = numerator / denominator
+    Else
+        CalculatePearsonCorrelation = 0
+    End If
+End Function
+
 Private Sub WritePortfolioMetrics(ws As Worksheet, mape As Double, mae As Double, rmse As Double, bestModel As String)
     ' Write portfolio-level metrics to summary sheet
     Dim startRow As Long
@@ -1695,4 +1926,128 @@ Private Sub PerformBacktest(ByRef data() As Double, _
         backtestCount = 0
         reliability = "N/A"
     End If
+End Sub
+
+Private Sub AnalyzeDataQuality(ByRef data() As Double, _
+                               ByRef qualityScore As Double, _
+                               ByRef missingPct As Double, _
+                               ByRef outlierPct As Double, _
+                               ByRef volatility As Double)
+    ' Comprehensive data quality analysis
+    ' Returns quality score (0-100) and specific metrics
+
+    Dim n As Long
+    Dim i As Long
+    Dim mean As Double
+    Dim stdDev As Double
+    Dim sum As Double
+    Dim validCount As Long
+    Dim zeroCount As Long
+    Dim outlierCount As Long
+    Dim sumSquaredDiff As Double
+
+    n = UBound(data) - LBound(data) + 1
+    validCount = 0
+    zeroCount = 0
+    outlierCount = 0
+    sum = 0
+
+    ' First pass: count zeros and calculate mean
+    For i = LBound(data) To UBound(data)
+        If data(i) = 0 Then
+            zeroCount = zeroCount + 1
+        Else
+            sum = sum + data(i)
+            validCount = validCount + 1
+        End If
+    Next i
+
+    If validCount > 0 Then
+        mean = sum / validCount
+    Else
+        ' All zeros - very poor quality
+        qualityScore = 0
+        missingPct = 100
+        outlierPct = 0
+        volatility = 0
+        Exit Sub
+    End If
+
+    ' Second pass: calculate standard deviation
+    sumSquaredDiff = 0
+    For i = LBound(data) To UBound(data)
+        If data(i) <> 0 Then
+            sumSquaredDiff = sumSquaredDiff + (data(i) - mean) ^ 2
+        End If
+    Next i
+
+    If validCount > 1 Then
+        stdDev = Sqr(sumSquaredDiff / (validCount - 1))
+    Else
+        stdDev = 0
+    End If
+
+    ' Third pass: count outliers (values beyond 3 standard deviations)
+    For i = LBound(data) To UBound(data)
+        If data(i) <> 0 Then
+            If Abs(data(i) - mean) > 3 * stdDev Then
+                outlierCount = outlierCount + 1
+            End If
+        End If
+    Next i
+
+    ' Calculate metrics
+    missingPct = (zeroCount / n) * 100
+    outlierPct = (outlierCount / n) * 100
+
+    ' Volatility index (coefficient of variation)
+    If mean > 0 Then
+        volatility = (stdDev / mean) * 100
+    Else
+        volatility = 0
+    End If
+
+    ' Calculate overall quality score (0-100)
+    Dim score As Double
+    score = 100
+
+    ' Penalize for missing data
+    If missingPct > 50 Then
+        score = score - 50 ' Severe penalty
+    ElseIf missingPct > 25 Then
+        score = score - 30
+    ElseIf missingPct > 10 Then
+        score = score - 15
+    ElseIf missingPct > 0 Then
+        score = score - 5
+    End If
+
+    ' Penalize for outliers
+    If outlierPct > 20 Then
+        score = score - 30
+    ElseIf outlierPct > 10 Then
+        score = score - 20
+    ElseIf outlierPct > 5 Then
+        score = score - 10
+    ElseIf outlierPct > 0 Then
+        score = score - 5
+    End If
+
+    ' Penalize for extreme volatility
+    If volatility > 200 Then
+        score = score - 20 ' Extremely volatile
+    ElseIf volatility > 100 Then
+        score = score - 10
+    ElseIf volatility > 50 Then
+        score = score - 5
+    End If
+
+    ' Penalize for insufficient data
+    If n < 12 Then
+        score = score - 20
+    ElseIf n < 24 Then
+        score = score - 10
+    End If
+
+    qualityScore = WorksheetFunction.Max(0, score)
 End Sub
