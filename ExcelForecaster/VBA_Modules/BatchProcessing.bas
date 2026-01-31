@@ -1189,16 +1189,20 @@ Private Sub CreateMAPEComparisonChart(ws As Worksheet)
     Dim cht As Chart
     Dim lastRow As Long
     Dim ser As Series  ' FIX: Capital S
+    Dim chartRow As Long
 
     lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+
+    ' Position chart BELOW all component data to avoid overlay
+    chartRow = lastRow + 5
 
     ' Delete existing chart
     On Error Resume Next
     ws.ChartObjects("MAPEComparison").Delete
     On Error GoTo 0
 
-    ' Create chart
-    Set chartObj = ws.ChartObjects.Add(Left:=ws.Cells(2, 22).Left, Top:=ws.Cells(2, 22).Top, Width:=600, Height:=400)
+    ' Create chart - positioned BELOW data, not to the right
+    Set chartObj = ws.ChartObjects.Add(Left:=ws.Cells(chartRow, 1).Left, Top:=ws.Cells(chartRow, 1).Top, Width:=600, Height:=400)
     chartObj.Name = "MAPEComparison"
     Set cht = chartObj.Chart
 
@@ -1226,6 +1230,13 @@ Private Sub CreateAccuracyDistributionChart(ws As Worksheet)
     Dim cht As Chart
     Dim excellentCount As Long, goodCount As Long, acceptableCount As Long, poorCount As Long, errorCount As Long
     Dim i As Long
+    Dim lastRow As Long
+    Dim chartRow As Long
+    Dim dataCol As Long
+
+    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    chartRow = lastRow + 5 + 30  ' Position below first chart
+    dataCol = 65  ' Column BM - well beyond our 61 data columns
 
     ' Count each class
     For i = 1 To ComponentCount
@@ -1238,31 +1249,31 @@ Private Sub CreateAccuracyDistributionChart(ws As Worksheet)
         End Select
     Next i
 
-    ' Create data range
-    ws.Cells(2, 25).Value = "Excellent"
-    ws.Cells(3, 25).Value = "Good"
-    ws.Cells(4, 25).Value = "Acceptable"
-    ws.Cells(5, 25).Value = "Poor"
-    ws.Cells(6, 25).Value = "Error"
-    ws.Cells(2, 26).Value = excellentCount
-    ws.Cells(3, 26).Value = goodCount
-    ws.Cells(4, 26).Value = acceptableCount
-    ws.Cells(5, 26).Value = poorCount
-    ws.Cells(6, 26).Value = errorCount
+    ' Create data range - use columns beyond data range
+    ws.Cells(chartRow, dataCol).Value = "Excellent"
+    ws.Cells(chartRow + 1, dataCol).Value = "Good"
+    ws.Cells(chartRow + 2, dataCol).Value = "Acceptable"
+    ws.Cells(chartRow + 3, dataCol).Value = "Poor"
+    ws.Cells(chartRow + 4, dataCol).Value = "Error"
+    ws.Cells(chartRow, dataCol + 1).Value = excellentCount
+    ws.Cells(chartRow + 1, dataCol + 1).Value = goodCount
+    ws.Cells(chartRow + 2, dataCol + 1).Value = acceptableCount
+    ws.Cells(chartRow + 3, dataCol + 1).Value = poorCount
+    ws.Cells(chartRow + 4, dataCol + 1).Value = errorCount
 
     ' Delete existing chart
     On Error Resume Next
     ws.ChartObjects("AccuracyDistribution").Delete
     On Error GoTo 0
 
-    ' Create chart
-    Set chartObj = ws.ChartObjects.Add(Left:=ws.Cells(8, 22).Left, Top:=ws.Cells(8, 22).Top, Width:=400, Height:=300)
+    ' Create chart - positioned below data
+    Set chartObj = ws.ChartObjects.Add(Left:=ws.Cells(chartRow, 1).Left, Top:=ws.Cells(chartRow, 1).Top, Width:=400, Height:=300)
     chartObj.Name = "AccuracyDistribution"
     Set cht = chartObj.Chart
 
     With cht
         .ChartType = xlPie
-        .SetSourceData ws.Range("Y2:Z6")
+        .SetSourceData ws.Range(ws.Cells(chartRow, dataCol), ws.Cells(chartRow + 4, dataCol + 1))
         .HasTitle = True
         .ChartTitle.Text = "Accuracy Class Distribution"
         .ApplyDataLabels xlDataLabelsShowPercent
@@ -1277,6 +1288,13 @@ Private Sub CreateModelSelectionChart(ws As Worksheet)
     Dim cht As Chart
     Dim sesCount As Long, hwCount As Long
     Dim i As Long
+    Dim lastRow As Long
+    Dim chartRow As Long
+    Dim dataCol As Long
+
+    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    chartRow = lastRow + 5 + 60  ' Position below second chart
+    dataCol = 65  ' Column BM - well beyond our 61 data columns
 
     ' Count model selections (exclude errors)
     For i = 1 To ComponentCount
@@ -1289,25 +1307,25 @@ Private Sub CreateModelSelectionChart(ws As Worksheet)
         End If
     Next i
 
-    ' Create data range
-    ws.Cells(8, 25).Value = "SES"
-    ws.Cells(9, 25).Value = "Holt-Winters"
-    ws.Cells(8, 26).Value = sesCount
-    ws.Cells(9, 26).Value = hwCount
+    ' Create data range - use columns beyond data range
+    ws.Cells(chartRow, dataCol).Value = "SES"
+    ws.Cells(chartRow + 1, dataCol).Value = "Holt-Winters"
+    ws.Cells(chartRow, dataCol + 1).Value = sesCount
+    ws.Cells(chartRow + 1, dataCol + 1).Value = hwCount
 
     ' Delete existing chart
     On Error Resume Next
     ws.ChartObjects("ModelSelection").Delete
     On Error GoTo 0
 
-    ' Create chart
-    Set chartObj = ws.ChartObjects.Add(Left:=ws.Cells(14, 22).Left, Top:=ws.Cells(14, 22).Top, Width:=400, Height:=300)
+    ' Create chart - positioned below data
+    Set chartObj = ws.ChartObjects.Add(Left:=ws.Cells(chartRow, 1).Left, Top:=ws.Cells(chartRow, 1).Top, Width:=400, Height:=300)
     chartObj.Name = "ModelSelection"
     Set cht = chartObj.Chart
 
     With cht
         .ChartType = xlPie
-        .SetSourceData ws.Range("Y8:Z9")
+        .SetSourceData ws.Range(ws.Cells(chartRow, dataCol), ws.Cells(chartRow + 1, dataCol + 1))
         .HasTitle = True
         .ChartTitle.Text = "Best Model Selection"
         .ApplyDataLabels xlDataLabelsShowPercent
@@ -2004,51 +2022,54 @@ End Sub
 
 Private Sub WritePortfolioMetrics(ws As Worksheet, mape As Double, mae As Double, rmse As Double, bestModel As String)
     ' Write portfolio-level metrics to summary sheet
+    ' Position AFTER data columns (61 columns = A to BI, so use column 70+)
     Dim startRow As Long
+    Dim startCol As Long
     startRow = 2
+    startCol = 70  ' Column BR - well beyond our 61 data columns
 
     ' Add header
-    ws.Cells(startRow, 28).Value = "PORTFOLIO METRICS"
-    ws.Cells(startRow, 28).Font.Bold = True
-    ws.Cells(startRow, 28).Font.Size = 14
-    ws.Cells(startRow, 28).Interior.Color = RGB(68, 114, 196)
-    ws.Cells(startRow, 28).Font.Color = RGB(255, 255, 255)
+    ws.Cells(startRow, startCol).Value = "PORTFOLIO METRICS"
+    ws.Cells(startRow, startCol).Font.Bold = True
+    ws.Cells(startRow, startCol).Font.Size = 14
+    ws.Cells(startRow, startCol).Interior.Color = RGB(68, 114, 196)
+    ws.Cells(startRow, startCol).Font.Color = RGB(255, 255, 255)
 
-    ' Add best model (NEW!)
-    ws.Cells(startRow + 2, 28).Value = "Best Portfolio Model:"
-    ws.Cells(startRow + 2, 29).Value = bestModel
-    ws.Cells(startRow + 2, 29).Font.Bold = True
-    ws.Cells(startRow + 2, 29).Font.Size = 11
-    ws.Cells(startRow + 2, 29).Interior.Color = RGB(217, 225, 242) ' Light blue
-    ws.Cells(startRow + 2, 29).Font.Color = RGB(0, 0, 0)
+    ' Add best model
+    ws.Cells(startRow + 2, startCol).Value = "Best Portfolio Model:"
+    ws.Cells(startRow + 2, startCol + 1).Value = bestModel
+    ws.Cells(startRow + 2, startCol + 1).Font.Bold = True
+    ws.Cells(startRow + 2, startCol + 1).Font.Size = 11
+    ws.Cells(startRow + 2, startCol + 1).Interior.Color = RGB(217, 225, 242) ' Light blue
+    ws.Cells(startRow + 2, startCol + 1).Font.Color = RGB(0, 0, 0)
 
     ' Add metrics
-    ws.Cells(startRow + 4, 28).Value = "Overall Portfolio MAPE:"
-    ws.Cells(startRow + 4, 29).Value = Format(mape, "0.00") & "%"
-    ws.Cells(startRow + 4, 29).Font.Bold = True
-    ws.Cells(startRow + 4, 29).Font.Size = 12
+    ws.Cells(startRow + 4, startCol).Value = "Overall Portfolio MAPE:"
+    ws.Cells(startRow + 4, startCol + 1).Value = Format(mape, "0.00") & "%"
+    ws.Cells(startRow + 4, startCol + 1).Font.Bold = True
+    ws.Cells(startRow + 4, startCol + 1).Font.Size = 12
 
     ' Color code the MAPE
     If mape < 10 Then
-        ws.Cells(startRow + 4, 29).Interior.Color = RGB(146, 208, 80) ' Green
+        ws.Cells(startRow + 4, startCol + 1).Interior.Color = RGB(146, 208, 80) ' Green
     ElseIf mape < 20 Then
-        ws.Cells(startRow + 4, 29).Interior.Color = RGB(255, 217, 102) ' Yellow
+        ws.Cells(startRow + 4, startCol + 1).Interior.Color = RGB(255, 217, 102) ' Yellow
     Else
-        ws.Cells(startRow + 4, 29).Interior.Color = RGB(255, 192, 203) ' Pink
+        ws.Cells(startRow + 4, startCol + 1).Interior.Color = RGB(255, 192, 203) ' Pink
     End If
 
-    ws.Cells(startRow + 5, 28).Value = "Portfolio MAE:"
-    ws.Cells(startRow + 5, 29).Value = Format(mae, "0.00")
+    ws.Cells(startRow + 5, startCol).Value = "Portfolio MAE:"
+    ws.Cells(startRow + 5, startCol + 1).Value = Format(mae, "0.00")
 
-    ws.Cells(startRow + 6, 28).Value = "Portfolio RMSE:"
-    ws.Cells(startRow + 6, 29).Value = Format(rmse, "0.00")
+    ws.Cells(startRow + 6, startCol).Value = "Portfolio RMSE:"
+    ws.Cells(startRow + 6, startCol + 1).Value = Format(rmse, "0.00")
 
-    ws.Cells(startRow + 8, 28).Value = "Components Processed:"
-    ws.Cells(startRow + 8, 29).Value = ComponentCount
+    ws.Cells(startRow + 8, startCol).Value = "Components Processed:"
+    ws.Cells(startRow + 8, startCol + 1).Value = ComponentCount
 
     ' Auto-fit columns
-    ws.Columns(28).AutoFit
-    ws.Columns(29).AutoFit
+    ws.Columns(startCol).AutoFit
+    ws.Columns(startCol + 1).AutoFit
 End Sub
 
 Private Sub CreatePortfolioForecastChart(ws As Worksheet, actual() As Double, forecast() As Double, lower() As Double, upper() As Double)
