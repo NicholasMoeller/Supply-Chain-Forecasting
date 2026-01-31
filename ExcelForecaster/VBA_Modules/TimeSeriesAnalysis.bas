@@ -3711,7 +3711,7 @@ Public Function FourierForecast(ByRef tsData As TimeSeriesData, _
 
     Dim result As ForecastResult
     Dim Values() As Double
-    Dim n As Long, i As Long, k As Integer, j As Long
+    Dim n As Long, i As Long, j As Long
     Dim numTerms As Integer
 
     Values = tsData.Values
