@@ -3323,13 +3323,13 @@ Public Function SARIMAForecast(ByRef tsData As TimeSeriesData, _
                                Optional ByVal p As Integer = 1, _
                                Optional ByVal d As Integer = 1, _
                                Optional ByVal q As Integer = 1, _
-                               Optional ByVal P As Integer = 1, _
-                               Optional ByVal D As Integer = 1, _
-                               Optional ByVal Q As Integer = 1, _
+                               Optional ByVal sP As Integer = 1, _
+                               Optional ByVal sD As Integer = 1, _
+                               Optional ByVal sQ As Integer = 1, _
                                Optional ByVal s As Integer = 0) As ForecastResult
-    ' SARIMA(p,d,q)(P,D,Q)s model
+    ' SARIMA(p,d,q)(sP,sD,sQ)s model
     ' p,d,q = non-seasonal AR, differencing, MA orders
-    ' P,D,Q = seasonal AR, differencing, MA orders
+    ' sP,sD,sQ = seasonal AR, differencing, MA orders (renamed from P,D,Q due to VBA case-insensitivity)
     ' s = seasonal period (0 = auto-detect)
 
     On Error GoTo ErrorHandler
@@ -3365,8 +3365,8 @@ Public Function SARIMAForecast(ByRef tsData As TimeSeriesData, _
     Next i
 
     ' Apply seasonal differencing
-    If D > 0 And seasonalPeriod > 1 Then
-        For i = 1 To D
+    If sD > 0 And seasonalPeriod > 1 Then
+        For i = 1 To sD
             diffValues = ApplySeasonalDifferencing(diffValues, seasonalPeriod)
         Next i
     End If
@@ -3379,8 +3379,8 @@ Public Function SARIMAForecast(ByRef tsData As TimeSeriesData, _
 
     ReDim arParams(1 To p)
     ReDim maParams(1 To q)
-    ReDim arSeasonalParams(1 To P)
-    ReDim maSeasonalParams(1 To Q)
+    ReDim arSeasonalParams(1 To sP)
+    ReDim maSeasonalParams(1 To sQ)
 
     ' Use Yule-Walker for AR parameters (simple estimation)
     If p > 0 Then
@@ -3397,14 +3397,14 @@ Public Function SARIMAForecast(ByRef tsData As TimeSeriesData, _
     End If
 
     ' Seasonal parameters (simplified)
-    If P > 0 And seasonalPeriod > 1 Then
-        For i = 1 To P
+    If sP > 0 And seasonalPeriod > 1 Then
+        For i = 1 To sP
             arSeasonalParams(i) = 0.2
         Next i
     End If
 
-    If Q > 0 And seasonalPeriod > 1 Then
-        For i = 1 To Q
+    If sQ > 0 And seasonalPeriod > 1 Then
+        For i = 1 To sQ
             maSeasonalParams(i) = 0.1
         Next i
     End If
@@ -3434,7 +3434,7 @@ Public Function SARIMAForecast(ByRef tsData As TimeSeriesData, _
         Next j
 
         ' Seasonal AR component
-        For j = 1 To P
+        For j = 1 To sP
             If i - j * seasonalPeriod >= LBound(diffValues) Then
                 fittedDiff = fittedDiff + arSeasonalParams(j) * diffValues(i - j * seasonalPeriod)
             End If
@@ -3448,7 +3448,7 @@ Public Function SARIMAForecast(ByRef tsData As TimeSeriesData, _
         Next j
 
         ' Seasonal MA component
-        For j = 1 To Q
+        For j = 1 To sQ
             If i - j * seasonalPeriod >= LBound(errors) Then
                 fittedDiff = fittedDiff + maSeasonalParams(j) * errors(i - j * seasonalPeriod)
             End If
@@ -3458,7 +3458,7 @@ Public Function SARIMAForecast(ByRef tsData As TimeSeriesData, _
     Next i
 
     ' Invert differencing to get fitted values in original scale
-    result.FittedValues = InvertDifferencing(diffValues, Values, d, D, seasonalPeriod)
+    result.FittedValues = InvertDifferencing(diffValues, Values, d, sD, seasonalPeriod)
 
     ' Calculate residuals
     For i = LBound(Values) To UBound(Values)
@@ -3483,7 +3483,7 @@ Public Function SARIMAForecast(ByRef tsData As TimeSeriesData, _
         Next j
 
         ' Seasonal AR component
-        For j = 1 To P
+        For j = 1 To sP
             If i - j * seasonalPeriod > 0 Then
                 fcstVal = fcstVal + arSeasonalParams(j) * forecastDiff(i - j * seasonalPeriod)
             ElseIf UBound(diffValues) - (j * seasonalPeriod) + 1 >= LBound(diffValues) Then
@@ -3524,7 +3524,7 @@ Public Function SARIMAForecast(ByRef tsData As TimeSeriesData, _
     result.RMSE = CalculateRMSE(Values, result.FittedValues)
     result.MBE = CalculateMBE(Values, result.FittedValues)
 
-    result.ModelName = "SARIMA(" & p & "," & d & "," & q & ")(" & P & "," & D & "," & Q & ")[" & seasonalPeriod & "]"
+    result.ModelName = "SARIMA(" & p & "," & d & "," & q & ")(" & sP & "," & sD & "," & sQ & ")[" & seasonalPeriod & "]"
 
     SARIMAForecast = result
     Exit Function
@@ -3680,9 +3680,11 @@ End Function
 Private Function InvertDifferencing(ByRef diffValues() As Double, _
                                    ByRef originalValues() As Double, _
                                    ByVal d As Integer, _
-                                   ByVal D As Integer, _
+                                   ByVal sD As Integer, _
                                    ByVal period As Integer) As Double()
     ' Invert differencing to get back to original scale (simplified)
+    ' d = non-seasonal differencing order
+    ' sD = seasonal differencing order (renamed from D due to VBA case-insensitivity)
     Dim result() As Double
     Dim i As Long
 
