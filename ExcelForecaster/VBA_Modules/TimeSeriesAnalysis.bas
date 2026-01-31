@@ -1346,7 +1346,7 @@ Public Function AutoForecast(ByRef tsData As TimeSeriesData, _
                              ByVal horizon As Integer, _
                              ByVal seasonalType As String) As ForecastResult
     On Error GoTo ErrorHandler
-    
+
     Dim results() As ForecastResult
     Dim modelNames() As String
     Dim modelCount As Integer
@@ -1354,6 +1354,7 @@ Public Function AutoForecast(ByRef tsData As TimeSeriesData, _
     Dim bestIndex As Integer
     Dim bestMAPE As Double
     Dim cleanedData As TimeSeriesData
+    Dim combinedResult As ForecastResult
     
     ' STEP 1: Data Preprocessing - Impute missing values and clean outliers
     Dim imputedValues() As Double
