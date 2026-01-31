@@ -2889,7 +2889,7 @@ Private Function DetectSeasonalType(ByRef Values() As Double, frequency As Integ
     ' Calculate correlation between means and std devs
     ' High correlation → multiplicative
     ' Low correlation → additive
-    correlation = CalculateCorrelation(cycleMeans, cycleStdDevs, frequency)
+    correlation = CalculateCorrelationN(cycleMeans, cycleStdDevs, frequency)
 
     If correlation > 0.5 Then
         DetectSeasonalType = "multiplicative"
@@ -2898,7 +2898,7 @@ Private Function DetectSeasonalType(ByRef Values() As Double, frequency As Integ
     End If
 End Function
 
-Private Function CalculateCorrelation(ByRef x() As Double, ByRef y() As Double, n As Integer) As Double
+Private Function CalculateCorrelationN(ByRef x() As Double, ByRef y() As Double, n As Integer) As Double
     Dim i As Long
     Dim sumX As Double, sumY As Double
     Dim sumXY As Double, sumX2 As Double, sumY2 As Double
@@ -2924,9 +2924,9 @@ Private Function CalculateCorrelation(ByRef x() As Double, ByRef y() As Double, 
     denominator = Sqr(sumX2 * sumY2)
 
     If denominator > 0 Then
-        CalculateCorrelation = numerator / denominator
+        CalculateCorrelationN = numerator / denominator
     Else
-        CalculateCorrelation = 0
+        CalculateCorrelationN = 0
     End If
 End Function
 
