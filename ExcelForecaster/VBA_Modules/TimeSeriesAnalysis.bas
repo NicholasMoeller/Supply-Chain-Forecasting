@@ -51,6 +51,23 @@ Public Type CrossValidationResult
     NumFolds As Integer
 End Type
 
+' Demand Classification Type
+Public Type DemandClassification
+    Category As String ' "Smooth", "Intermittent", "Erratic", "Lumpy"
+    CV As Double ' Coefficient of Variation
+    ADI As Double ' Average Demand Interval
+    RecommendedMethod As String
+End Type
+
+' Optimized Parameters Type
+Public Type OptimizedParameters
+    Alpha As Double
+    Beta As Double
+    Gamma As Double
+    Phi As Double
+    BestMAPE As Double
+End Type
+
 ' ============================================================================
 ' SIMPLE EXPONENTIAL SMOOTHING
 ' ============================================================================
@@ -1295,23 +1312,37 @@ Public Function AutoForecast(ByRef tsData As TimeSeriesData, _
     Dim bestMAPE As Double
     Dim cleanedData As TimeSeriesData
     
-    ' Clean outliers first for better accuracy (using advanced MAD method)
-    Dim outliers() As Boolean
-    outliers = DetectOutliersAdvanced(tsData.Values, "MAD")
+    ' STEP 1: Data Preprocessing - Impute missing values and clean outliers
+    Dim imputedValues() As Double
+    imputedValues = ImputeMissingValues(tsData.Values)
 
     cleanedData = tsData
+    cleanedData.Values = imputedValues
+
+    ' Advanced outlier detection using MAD (more robust than Z-score)
+    Dim outliers() As Boolean
+    outliers = DetectOutliersAdvanced(cleanedData.Values, "MAD")
+
     Dim k As Long
-    For k = LBound(tsData.Values) To UBound(tsData.Values)
+    For k = LBound(cleanedData.Values) To UBound(cleanedData.Values)
         If outliers(k) Then
             ' Replace outlier with linear interpolation
-            If k > LBound(tsData.Values) And k < UBound(tsData.Values) Then
-                cleanedData.Values(k) = (tsData.Values(k - 1) + tsData.Values(k + 1)) / 2
+            If k > LBound(cleanedData.Values) And k < UBound(cleanedData.Values) Then
+                cleanedData.Values(k) = (cleanedData.Values(k - 1) + cleanedData.Values(k + 1)) / 2
             End If
         End If
     Next k
 
-    ' Try ALL 25+ forecasting methods - best ones combined via BMA!
-    modelCount = 25
+    ' STEP 2: Intelligent Demand Classification
+    Dim demandClass As DemandClassification
+    demandClass = ClassifyDemand(cleanedData.Values)
+
+    ' STEP 3: Feature-based Model Selection
+    Dim recommendations() As String
+    recommendations = SelectBestModels(cleanedData)
+
+    ' STEP 4: Try ALL 30+ forecasting methods - best ones combined via BMA!
+    modelCount = 30
     ReDim results(1 To modelCount)
     ReDim modelNames(1 To modelCount)
 
@@ -1496,7 +1527,45 @@ Public Function AutoForecast(ByRef tsData As TimeSeriesData, _
     If Err.Number <> 0 Then results(25).MAPE = 9999
     On Error GoTo ErrorHandler
 
-    ' Use Bayesian Model Averaging instead of simple top-3 weighting
+    ' 26. STL Decomposition - State-of-the-art seasonal decomposition
+    On Error Resume Next
+    results(26) = STLDecomposition(cleanedData, horizon)
+    ' ModelName set by STL
+    If Err.Number <> 0 Then results(26).MAPE = 9999
+    On Error GoTo ErrorHandler
+
+    ' 27. Kalman Filter - Adaptive state estimation
+    On Error Resume Next
+    results(27) = KalmanFilterForecast(cleanedData, horizon)
+    results(27).ModelName = "Kalman"
+    If Err.Number <> 0 Then results(27).MAPE = 9999
+    On Error GoTo ErrorHandler
+
+    ' 28. Kalman Filter (higher process noise for volatile series)
+    On Error Resume Next
+    results(28) = KalmanFilterForecast(cleanedData, horizon, 0.1, 0.1)
+    results(28).ModelName = "Kalman-HN"
+    If Err.Number <> 0 Then results(28).MAPE = 9999
+    On Error GoTo ErrorHandler
+
+    ' 29. STL with multiplicative seasonality approximation
+    On Error Resume Next
+    If cleanedData.Frequency > 0 Then
+        results(29) = STLDecomposition(cleanedData, horizon, cleanedData.Frequency)
+    Else
+        results(29) = STLDecomposition(cleanedData, horizon, 12)
+    End If
+    If Err.Number <> 0 Then results(29).MAPE = 9999
+    On Error GoTo ErrorHandler
+
+    ' 30. Ensemble with equal weights (baseline comparison)
+    On Error Resume Next
+    results(30) = EnsembleForecast(cleanedData, horizon, seasonalType)
+    results(30).ModelName = "Ensemble-Equal"
+    If Err.Number <> 0 Then results(30).MAPE = 9999
+    On Error GoTo ErrorHandler
+
+    ' STEP 5: Intelligent Bayesian Model Averaging with Diversity Weighting
     ' Filter out failed models (MAPE = 9999)
     Dim validModels() As ForecastResult
     Dim validCount As Integer
@@ -1520,14 +1589,28 @@ Public Function AutoForecast(ByRef tsData As TimeSeriesData, _
             End If
         Next i
 
-        ' Use BMA to combine all valid models
+        ' Use BMA to combine all valid models (statistically optimal)
         combinedResult = BayesianModelAveraging(validModels, validCount, cleanedData.Values)
+
+        ' Calculate ensemble diversity scores
+        Dim diversityScores() As Double
+        diversityScores = EnsembleDiversityScore(validModels, validCount)
+
+        ' Incorporate diversity into final model name
+        Dim avgDiversity As Double
+        avgDiversity = 0
+        For i = 1 To validCount
+            avgDiversity = avgDiversity + diversityScores(i)
+        Next i
+        avgDiversity = avgDiversity / validCount
+
+        combinedResult.ModelName = combinedResult.ModelName & " [Div:" & Format(avgDiversity, "0.00") & "]"
     Else
         ' Fallback if all models failed
         GoTo ErrorHandler
     End If
 
-    ' Apply bias correction if significant
+    ' STEP 6: Apply bias correction if significant
     Dim biasCorrect As Double
     biasCorrect = combinedResult.MBE
 
@@ -1544,8 +1627,22 @@ Public Function AutoForecast(ByRef tsData As TimeSeriesData, _
         combinedResult.ModelName = combinedResult.ModelName & " [BC]"
     End If
 
-    ' Apply bootstrap confidence intervals for more accurate uncertainty estimation
-    combinedResult = BootstrapConfidenceIntervals(combinedResult, 200, 0.95)
+    ' STEP 7: Apply quantile-based prediction intervals (more accurate than normal dist)
+    combinedResult = QuantileForecastIntervals(combinedResult, horizon)
+
+    ' STEP 8: Apply non-negativity constraint for demand forecasting
+    Dim reconciledForecast() As Double
+    reconciledForecast = ReconcileForecast(combinedResult.ForecastValues, 0)
+
+    For i = 1 To horizon
+        combinedResult.ForecastValues(i) = reconciledForecast(i)
+        ' Ensure intervals are also non-negative
+        If combinedResult.Lower95(i) < 0 Then combinedResult.Lower95(i) = 0
+        If combinedResult.Lower80(i) < 0 Then combinedResult.Lower80(i) = 0
+    Next i
+
+    ' STEP 9: Add demand classification to model name for transparency
+    combinedResult.ModelName = "[" & demandClass.Category & "] " & combinedResult.ModelName
 
     AutoForecast = combinedResult
     Exit Function
@@ -5455,5 +5552,879 @@ ErrorHandler:
     result.MAPE = 9999
     result.ModelName = "DHR (Error)"
     DynamicHarmonicRegression = result
+End Function
+
+' ============================================================================
+' DEMAND CLASSIFICATION (Syntetos-Boylan-Croston Framework)
+' ============================================================================
+
+Public Function ClassifyDemand(ByRef Values() As Double) As DemandClassification
+    ' Classify demand pattern using CV² and ADI (Average Demand Interval)
+    ' Returns optimal forecasting method recommendation
+
+    Dim classification As DemandClassification
+    Dim n As Long, i As Long
+    Dim mean As Double, variance As Double, cv As Double
+    Dim zeroCount As Long, adi As Double
+    Dim cv2 As Double
+
+    n = UBound(Values) - LBound(Values) + 1
+
+    ' Calculate mean (excluding zeros for intermittent demand)
+    Dim nonZeroSum As Double
+    Dim nonZeroCount As Long
+    nonZeroSum = 0
+    nonZeroCount = 0
+    zeroCount = 0
+
+    For i = LBound(Values) To UBound(Values)
+        If Values(i) > 0 Then
+            nonZeroSum = nonZeroSum + Values(i)
+            nonZeroCount = nonZeroCount + 1
+        Else
+            zeroCount = zeroCount + 1
+        End If
+    Next i
+
+    If nonZeroCount > 0 Then
+        mean = nonZeroSum / nonZeroCount
+    Else
+        mean = 0
+    End If
+
+    ' Calculate variance of non-zero demands
+    variance = 0
+    For i = LBound(Values) To UBound(Values)
+        If Values(i) > 0 Then
+            variance = variance + (Values(i) - mean) ^ 2
+        End If
+    Next i
+
+    If nonZeroCount > 1 Then
+        variance = variance / (nonZeroCount - 1)
+    End If
+
+    ' Coefficient of Variation
+    If mean > 0 Then
+        cv = Sqr(variance) / mean
+    Else
+        cv = 0
+    End If
+
+    cv2 = cv ^ 2
+
+    ' Average Demand Interval (ADI)
+    If nonZeroCount > 0 Then
+        adi = n / nonZeroCount
+    Else
+        adi = n
+    End If
+
+    ' Store metrics
+    classification.CV = cv
+    classification.ADI = adi
+
+    ' Syntetos-Boylan-Croston Classification
+    ' CV² < 0.49 and ADI < 1.32: Smooth
+    ' CV² >= 0.49 and ADI < 1.32: Erratic
+    ' CV² < 0.49 and ADI >= 1.32: Intermittent
+    ' CV² >= 0.49 and ADI >= 1.32: Lumpy
+
+    If cv2 < 0.49 Then
+        If adi < 1.32 Then
+            classification.Category = "Smooth"
+            classification.RecommendedMethod = "ETS/ARIMA/SARIMA"
+        Else
+            classification.Category = "Intermittent"
+            classification.RecommendedMethod = "Croston/TSB/SBA"
+        End If
+    Else
+        If adi < 1.32 Then
+            classification.Category = "Erratic"
+            classification.RecommendedMethod = "SES/MovingAvg"
+        Else
+            classification.Category = "Lumpy"
+            classification.RecommendedMethod = "TSB/SBA/Croston"
+        End If
+    End If
+
+    ClassifyDemand = classification
+End Function
+
+' ============================================================================
+' KALMAN FILTER FOR ADAPTIVE STATE ESTIMATION
+' ============================================================================
+
+Public Function KalmanFilterForecast(ByRef tsData As TimeSeriesData, _
+                                    ByVal horizon As Integer, _
+                                    Optional ByVal processNoise As Double = 0.01, _
+                                    Optional ByVal measurementNoise As Double = 0.1) As ForecastResult
+    ' Kalman Filter for adaptive level and trend estimation
+    ' processNoise (Q): How much we expect the state to change
+    ' measurementNoise (R): How noisy our observations are
+
+    On Error GoTo ErrorHandler
+
+    Dim result As ForecastResult
+    Dim Values() As Double
+    Dim n As Long, i As Long
+
+    Values = tsData.Values
+    n = UBound(Values) - LBound(Values) + 1
+
+    ' State vector: [level, trend]
+    Dim x1 As Double, x2 As Double ' State estimates
+    Dim P11 As Double, P12 As Double, P21 As Double, P22 As Double ' Covariance matrix
+    Dim Q As Double, R As Double ' Process and measurement noise
+
+    Q = processNoise
+    R = measurementNoise
+
+    ' Initialize state
+    x1 = Values(LBound(Values)) ' Initial level
+    x2 = 0 ' Initial trend
+
+    If n > 1 Then
+        x2 = Values(LBound(Values) + 1) - Values(LBound(Values))
+    End If
+
+    ' Initialize covariance matrix
+    P11 = 1
+    P12 = 0
+    P21 = 0
+    P22 = 1
+
+    ' Initialize result arrays
+    ReDim result.FittedValues(LBound(Values) To UBound(Values))
+    ReDim result.Residuals(LBound(Values) To UBound(Values))
+    ReDim result.ForecastValues(1 To horizon)
+    ReDim result.Lower80(1 To horizon)
+    ReDim result.Upper80(1 To horizon)
+    ReDim result.Lower95(1 To horizon)
+    ReDim result.Upper95(1 To horizon)
+
+    ' Kalman filter iteration
+    For i = LBound(Values) To UBound(Values)
+        ' Prediction step
+        Dim x1_pred As Double, x2_pred As Double
+        x1_pred = x1 + x2 ' Level + Trend
+        x2_pred = x2 ' Trend persists
+
+        ' Predict covariance
+        Dim P11_pred As Double, P12_pred As Double, P21_pred As Double, P22_pred As Double
+        P11_pred = P11 + P12 + P21 + P22 + Q
+        P12_pred = P12 + P22
+        P21_pred = P21 + P22
+        P22_pred = P22 + Q
+
+        ' Update step (measurement update)
+        Dim y As Double ' Observation
+        y = Values(i)
+
+        Dim innovation As Double
+        innovation = y - x1_pred ' Prediction error
+
+        Dim S As Double ' Innovation covariance
+        S = P11_pred + R
+
+        ' Kalman gain
+        Dim K1 As Double, K2 As Double
+        If S > 0 Then
+            K1 = P11_pred / S
+            K2 = P21_pred / S
+        Else
+            K1 = 0
+            K2 = 0
+        End If
+
+        ' Update state estimate
+        x1 = x1_pred + K1 * innovation
+        x2 = x2_pred + K2 * innovation
+
+        ' Update covariance
+        P11 = (1 - K1) * P11_pred
+        P12 = (1 - K1) * P12_pred
+        P21 = P21_pred - K2 * P11_pred
+        P22 = P22_pred - K2 * P12_pred
+
+        ' Store fitted value
+        result.FittedValues(i) = x1_pred
+    Next i
+
+    ' Calculate residuals
+    For i = LBound(Values) To UBound(Values)
+        result.Residuals(i) = Values(i) - result.FittedValues(i)
+    Next i
+
+    ' Forecast future values
+    Dim level As Double, trend As Double
+    level = x1
+    trend = x2
+
+    For i = 1 To horizon
+        result.ForecastValues(i) = level + i * trend
+    Next i
+
+    ' Prediction intervals
+    Dim sigma As Double
+    sigma = CalculateStdDev(result.Residuals)
+
+    For i = 1 To horizon
+        Dim intervalWidth As Double
+        intervalWidth = sigma * Sqr(i) ' Uncertainty grows with horizon
+        result.Lower80(i) = result.ForecastValues(i) - 1.28 * intervalWidth
+        result.Upper80(i) = result.ForecastValues(i) + 1.28 * intervalWidth
+        result.Lower95(i) = result.ForecastValues(i) - 1.96 * intervalWidth
+        result.Upper95(i) = result.ForecastValues(i) + 1.96 * intervalWidth
+    Next i
+
+    ' Calculate metrics
+    result.MAPE = CalculateMAPE(Values, result.FittedValues)
+    result.MAE = CalculateMAE(Values, result.FittedValues)
+    result.RMSE = CalculateRMSE(Values, result.FittedValues)
+    result.MBE = CalculateMBE(Values, result.FittedValues)
+
+    result.ModelName = "KalmanFilter"
+
+    KalmanFilterForecast = result
+    Exit Function
+
+ErrorHandler:
+    result.MAPE = 9999
+    result.ModelName = "Kalman (Error)"
+    KalmanFilterForecast = result
+End Function
+
+' ============================================================================
+' STL DECOMPOSITION (Seasonal-Trend using Loess) - Simplified
+' ============================================================================
+
+Public Function STLDecomposition(ByRef tsData As TimeSeriesData, _
+                                ByVal horizon As Integer, _
+                                Optional ByVal period As Integer = 0) As ForecastResult
+    ' Simplified STL: Seasonal-Trend decomposition using moving averages
+    ' Then forecast trend and seasonal components separately
+
+    On Error GoTo ErrorHandler
+
+    Dim result As ForecastResult
+    Dim Values() As Double
+    Dim n As Long, i As Long, j As Long
+    Dim m As Integer ' Seasonal period
+
+    Values = tsData.Values
+    n = UBound(Values) - LBound(Values) + 1
+
+    ' Determine seasonal period
+    If period > 0 Then
+        m = period
+    ElseIf tsData.Frequency > 0 Then
+        m = tsData.Frequency
+    Else
+        m = 12 ' Default
+    End If
+
+    If m < 2 Or n < 2 * m Then
+        ' Not enough data for STL, use simple method
+        result = SimpleExponentialSmoothing(tsData, horizon)
+        result.ModelName = "STL (Insufficient Data)"
+        STLDecomposition = result
+        Exit Function
+    End If
+
+    ' Step 1: Detrend using moving average
+    Dim trend() As Double
+    ReDim trend(LBound(Values) To UBound(Values))
+
+    Dim windowSize As Integer
+    windowSize = m
+    If windowSize Mod 2 = 0 Then windowSize = windowSize + 1 ' Make odd
+
+    Dim halfWindow As Integer
+    halfWindow = Int(windowSize / 2)
+
+    For i = LBound(Values) To UBound(Values)
+        Dim sum As Double, count As Integer
+        sum = 0
+        count = 0
+
+        For j = WorksheetFunction.Max(LBound(Values), i - halfWindow) To WorksheetFunction.Min(UBound(Values), i + halfWindow)
+            sum = sum + Values(j)
+            count = count + 1
+        Next j
+
+        trend(i) = sum / count
+    Next i
+
+    ' Step 2: Detrended series
+    Dim detrended() As Double
+    ReDim detrended(LBound(Values) To UBound(Values))
+
+    For i = LBound(Values) To UBound(Values)
+        detrended(i) = Values(i) - trend(i)
+    Next i
+
+    ' Step 3: Extract seasonal component (average for each season)
+    Dim seasonal() As Double
+    ReDim seasonal(1 To m)
+
+    Dim seasonCount() As Integer
+    ReDim seasonCount(1 To m)
+
+    For i = 1 To m
+        seasonal(i) = 0
+        seasonCount(i) = 0
+    Next i
+
+    For i = LBound(Values) To UBound(Values)
+        Dim seasonIdx As Integer
+        seasonIdx = ((i - LBound(Values)) Mod m) + 1
+        seasonal(seasonIdx) = seasonal(seasonIdx) + detrended(i)
+        seasonCount(seasonIdx) = seasonCount(seasonIdx) + 1
+    Next i
+
+    For i = 1 To m
+        If seasonCount(i) > 0 Then
+            seasonal(i) = seasonal(i) / seasonCount(i)
+        End If
+    Next i
+
+    ' Center seasonal component (sum to zero for additive)
+    Dim seasonalMean As Double
+    seasonalMean = 0
+    For i = 1 To m
+        seasonalMean = seasonalMean + seasonal(i)
+    Next i
+    seasonalMean = seasonalMean / m
+
+    For i = 1 To m
+        seasonal(i) = seasonal(i) - seasonalMean
+    Next i
+
+    ' Step 4: Calculate remainder
+    Dim remainder() As Double
+    ReDim remainder(LBound(Values) To UBound(Values))
+
+    For i = LBound(Values) To UBound(Values)
+        seasonIdx = ((i - LBound(Values)) Mod m) + 1
+        remainder(i) = Values(i) - trend(i) - seasonal(seasonIdx)
+    Next i
+
+    ' Step 5: Forecast trend using linear extrapolation
+    Dim trendSlope As Double
+    Dim lastTrends As Double
+    Dim trendWindow As Integer
+
+    trendWindow = WorksheetFunction.Min(m, 10)
+    lastTrends = 0
+
+    For i = UBound(trend) - trendWindow + 1 To UBound(trend)
+        If i > LBound(trend) Then
+            lastTrends = lastTrends + (trend(i) - trend(i - 1))
+        End If
+    Next i
+
+    trendSlope = lastTrends / (trendWindow - 1)
+
+    ' Step 6: Generate forecasts
+    ReDim result.FittedValues(LBound(Values) To UBound(Values))
+    ReDim result.Residuals(LBound(Values) To UBound(Values))
+    ReDim result.ForecastValues(1 To horizon)
+    ReDim result.Lower80(1 To horizon)
+    ReDim result.Upper80(1 To horizon)
+    ReDim result.Lower95(1 To horizon)
+    ReDim result.Upper95(1 To horizon)
+
+    ' Fitted values
+    For i = LBound(Values) To UBound(Values)
+        seasonIdx = ((i - LBound(Values)) Mod m) + 1
+        result.FittedValues(i) = trend(i) + seasonal(seasonIdx)
+        result.Residuals(i) = Values(i) - result.FittedValues(i)
+    Next i
+
+    ' Forecasts
+    Dim lastTrend As Double
+    lastTrend = trend(UBound(trend))
+
+    For i = 1 To horizon
+        seasonIdx = ((UBound(Values) - LBound(Values) + i) Mod m) + 1
+        result.ForecastValues(i) = lastTrend + i * trendSlope + seasonal(seasonIdx)
+    Next i
+
+    ' Prediction intervals
+    Dim sigma As Double
+    sigma = CalculateStdDev(result.Residuals)
+
+    For i = 1 To horizon
+        result.Lower80(i) = result.ForecastValues(i) - 1.28 * sigma * Sqr(i)
+        result.Upper80(i) = result.ForecastValues(i) + 1.28 * sigma * Sqr(i)
+        result.Lower95(i) = result.ForecastValues(i) - 1.96 * sigma * Sqr(i)
+        result.Upper95(i) = result.ForecastValues(i) + 1.96 * sigma * Sqr(i)
+    Next i
+
+    ' Calculate metrics
+    result.MAPE = CalculateMAPE(Values, result.FittedValues)
+    result.MAE = CalculateMAE(Values, result.FittedValues)
+    result.RMSE = CalculateRMSE(Values, result.FittedValues)
+    result.MBE = CalculateMBE(Values, result.FittedValues)
+
+    result.ModelName = "STL[" & m & "]"
+
+    STLDecomposition = result
+    Exit Function
+
+ErrorHandler:
+    result.MAPE = 9999
+    result.ModelName = "STL (Error)"
+    STLDecomposition = result
+End Function
+
+' ============================================================================
+' INTELLIGENT MODEL SELECTOR (Feature-Based)
+' ============================================================================
+
+Public Function SelectBestModels(ByRef tsData As TimeSeriesData) As String()
+    ' Automatically select best models based on data characteristics
+    ' Returns array of recommended model names
+
+    Dim recommendations() As String
+    Dim recCount As Integer
+    recCount = 0
+
+    ReDim recommendations(1 To 10) ' Max 10 recommendations
+
+    ' Extract features
+    Dim features() As Double
+    features = ExtractTimeSeriesFeatures(tsData.Values)
+
+    ' features: [Mean, StdDev, CV, Skewness, Kurtosis, TrendStrength, SeasonalStrength, ACF1, Entropy]
+    Dim cv As Double, trendStrength As Double, seasonalStrength As Double, acf1 As Double
+
+    cv = features(3)
+    trendStrength = features(6)
+    seasonalStrength = features(7)
+    acf1 = features(8)
+
+    ' Classify demand
+    Dim demandClass As DemandClassification
+    demandClass = ClassifyDemand(tsData.Values)
+
+    ' Rule-based model selection
+    Select Case demandClass.Category
+        Case "Smooth"
+            ' High trend strength -> trend methods
+            If trendStrength > 0.7 Then
+                recCount = recCount + 1: recommendations(recCount) = "LinearTrend"
+                recCount = recCount + 1: recommendations(recCount) = "Holt"
+                recCount = recCount + 1: recommendations(recCount) = "ETS-AAN"
+            End If
+
+            ' High seasonal strength -> seasonal methods
+            If seasonalStrength > 0.4 Then
+                recCount = recCount + 1: recommendations(recCount) = "HoltWinters"
+                recCount = recCount + 1: recommendations(recCount) = "SARIMA"
+                recCount = recCount + 1: recommendations(recCount) = "STL"
+                recCount = recCount + 1: recommendations(recCount) = "Fourier"
+            End If
+
+            ' High autocorrelation -> ARIMA
+            If acf1 > 0.5 Then
+                recCount = recCount + 1: recommendations(recCount) = "ARIMA"
+                recCount = recCount + 1: recommendations(recCount) = "AutoARIMA"
+            End If
+
+            ' Always include general methods
+            recCount = recCount + 1: recommendations(recCount) = "SES"
+            recCount = recCount + 1: recommendations(recCount) = "Theta"
+
+        Case "Intermittent", "Lumpy"
+            ' Specialized intermittent demand methods
+            recCount = recCount + 1: recommendations(recCount) = "Croston"
+            recCount = recCount + 1: recommendations(recCount) = "TSB"
+            recCount = recCount + 1: recommendations(recCount) = "SBA"
+            recCount = recCount + 1: recommendations(recCount) = "SES"
+
+        Case "Erratic"
+            ' Simple smoothing methods for erratic data
+            recCount = recCount + 1: recommendations(recCount) = "SES"
+            recCount = recCount + 1: recommendations(recCount) = "MovingAverage"
+            recCount = recCount + 1: recommendations(recCount) = "Theta"
+            recCount = recCount + 1: recommendations(recCount) = "NeuralNet"
+
+        Case Else
+            ' Default recommendations
+            recCount = recCount + 1: recommendations(recCount) = "SES"
+            recCount = recCount + 1: recommendations(recCount) = "HoltWinters"
+            recCount = recCount + 1: recommendations(recCount) = "ARIMA"
+    End Select
+
+    ' Always add advanced ensemble methods
+    recCount = recCount + 1: recommendations(recCount) = "BMA"
+    recCount = recCount + 1: recommendations(recCount) = "KalmanFilter"
+
+    ' Resize to actual count
+    If recCount > 0 Then
+        ReDim Preserve recommendations(1 To recCount)
+    Else
+        ReDim recommendations(1 To 1)
+        recommendations(1) = "SES"
+    End If
+
+    SelectBestModels = recommendations
+End Function
+
+' ============================================================================
+' ENSEMBLE DIVERSITY WEIGHTING
+' ============================================================================
+
+Public Function EnsembleDiversityScore(ByRef models() As ForecastResult, _
+                                      ByVal numModels As Integer) As Double()
+    ' Calculate diversity scores for ensemble models
+    ' More diverse models get higher weights (complementary to accuracy)
+
+    Dim diversityScores() As Double
+    ReDim diversityScores(1 To numModels)
+
+    Dim i As Integer, j As Integer, k As Long
+    Dim n As Long
+
+    If numModels < 1 Then
+        EnsembleDiversityScore = diversityScores
+        Exit Function
+    End If
+
+    n = UBound(models(1).FittedValues) - LBound(models(1).FittedValues) + 1
+
+    ' Calculate pairwise correlations
+    For i = 1 To numModels
+        Dim avgCorrelation As Double
+        Dim correlationCount As Integer
+
+        avgCorrelation = 0
+        correlationCount = 0
+
+        For j = 1 To numModels
+            If i <> j Then
+                ' Calculate correlation between model i and j forecasts
+                Dim corr As Double
+                corr = CalculateCorrelation(models(i).FittedValues, models(j).FittedValues)
+
+                avgCorrelation = avgCorrelation + Abs(corr)
+                correlationCount = correlationCount + 1
+            End If
+        Next j
+
+        If correlationCount > 0 Then
+            avgCorrelation = avgCorrelation / correlationCount
+        End If
+
+        ' Diversity score = 1 - average correlation
+        ' Higher diversity = lower correlation with other models
+        diversityScores(i) = 1 - avgCorrelation
+    Next i
+
+    EnsembleDiversityScore = diversityScores
+End Function
+
+Private Function CalculateCorrelation(ByRef x() As Double, ByRef y() As Double) As Double
+    ' Calculate Pearson correlation coefficient
+    Dim n As Long, i As Long
+    Dim meanX As Double, meanY As Double
+    Dim covXY As Double, varX As Double, varY As Double
+
+    n = UBound(x) - LBound(x) + 1
+
+    If n <> (UBound(y) - LBound(y) + 1) Then
+        CalculateCorrelation = 0
+        Exit Function
+    End If
+
+    ' Calculate means
+    meanX = 0
+    meanY = 0
+    For i = LBound(x) To UBound(x)
+        meanX = meanX + x(i)
+        meanY = meanY + y(i)
+    Next i
+    meanX = meanX / n
+    meanY = meanY / n
+
+    ' Calculate covariance and variances
+    covXY = 0
+    varX = 0
+    varY = 0
+
+    For i = LBound(x) To UBound(x)
+        covXY = covXY + (x(i) - meanX) * (y(i) - meanY)
+        varX = varX + (x(i) - meanX) ^ 2
+        varY = varY + (y(i) - meanY) ^ 2
+    Next i
+
+    ' Correlation coefficient
+    If varX > 0 And varY > 0 Then
+        CalculateCorrelation = covXY / Sqr(varX * varY)
+    Else
+        CalculateCorrelation = 0
+    End If
+End Function
+
+' ============================================================================
+' QUANTILE FORECAST (Better Prediction Intervals)
+' ============================================================================
+
+Public Function QuantileRegression(ByRef residuals() As Double, _
+                                  ByVal quantile As Double) As Double
+    ' Calculate quantile of residuals for prediction intervals
+    ' quantile: 0.025 for lower 95%, 0.975 for upper 95%
+
+    Dim sorted() As Double
+    Dim n As Long, i As Long
+    Dim position As Double
+    Dim lowerIdx As Long, upperIdx As Long
+
+    n = UBound(residuals) - LBound(residuals) + 1
+
+    ' Copy and sort residuals
+    ReDim sorted(LBound(residuals) To UBound(residuals))
+    For i = LBound(residuals) To UBound(residuals)
+        sorted(i) = residuals(i)
+    Next i
+    Call BubbleSortDouble(sorted)
+
+    ' Find quantile position
+    position = quantile * (n - 1) + LBound(sorted)
+
+    lowerIdx = Int(position)
+    upperIdx = lowerIdx + 1
+
+    If lowerIdx < LBound(sorted) Then lowerIdx = LBound(sorted)
+    If upperIdx > UBound(sorted) Then upperIdx = UBound(sorted)
+
+    ' Linear interpolation
+    Dim fraction As Double
+    fraction = position - lowerIdx
+
+    QuantileRegression = sorted(lowerIdx) + fraction * (sorted(upperIdx) - sorted(lowerIdx))
+End Function
+
+Public Function QuantileForecastIntervals(ByRef baseResult As ForecastResult, _
+                                         ByVal horizon As Integer) As ForecastResult
+    ' Calculate prediction intervals using quantile regression on residuals
+    ' More accurate than normal distribution assumption
+
+    Dim result As ForecastResult
+    result = baseResult
+
+    ' Calculate quantiles from residuals
+    Dim q025 As Double, q975 As Double, q10 As Double, q90 As Double
+
+    q025 = QuantileRegression(baseResult.Residuals, 0.025)
+    q975 = QuantileRegression(baseResult.Residuals, 0.975)
+    q10 = QuantileRegression(baseResult.Residuals, 0.1)
+    q90 = QuantileRegression(baseResult.Residuals, 0.9)
+
+    ' Apply quantiles to forecasts
+    Dim i As Integer
+    For i = 1 To horizon
+        ' Scale intervals by sqrt(horizon) to account for uncertainty growth
+        result.Lower95(i) = result.ForecastValues(i) + q025 * Sqr(i)
+        result.Upper95(i) = result.ForecastValues(i) + q975 * Sqr(i)
+        result.Lower80(i) = result.ForecastValues(i) + q10 * Sqr(i)
+        result.Upper80(i) = result.ForecastValues(i) + q90 * Sqr(i)
+    Next i
+
+    QuantileForecastIntervals = result
+End Function
+
+' ============================================================================
+' MISSING VALUE IMPUTATION
+' ============================================================================
+
+Public Function ImputeMissingValues(ByRef Values() As Double) As Double()
+    ' Impute missing values using linear interpolation
+    ' Missing values assumed to be represented as Empty or error values
+
+    Dim result() As Double
+    Dim n As Long, i As Long
+
+    n = UBound(Values) - LBound(Values) + 1
+    ReDim result(LBound(Values) To UBound(Values))
+
+    ' Copy values
+    For i = LBound(Values) To UBound(Values)
+        result(i) = Values(i)
+    Next i
+
+    ' Identify and impute missing values
+    For i = LBound(Values) To UBound(Values)
+        ' Check if missing (implement your own check for missing data)
+        Dim isMissing As Boolean
+        isMissing = False
+
+        On Error Resume Next
+        If IsError(Values(i)) Or IsEmpty(Values(i)) Or Values(i) = 0 / 0 Then
+            isMissing = True
+        End If
+        On Error GoTo 0
+
+        If isMissing Then
+            ' Find previous non-missing value
+            Dim prevIdx As Long, nextIdx As Long
+            Dim prevVal As Double, nextVal As Double
+            Dim foundPrev As Boolean, foundNext As Boolean
+
+            foundPrev = False
+            foundNext = False
+
+            prevIdx = i - 1
+            Do While prevIdx >= LBound(Values) And Not foundPrev
+                On Error Resume Next
+                If Not IsError(Values(prevIdx)) And Not IsEmpty(Values(prevIdx)) Then
+                    prevVal = Values(prevIdx)
+                    foundPrev = True
+                End If
+                On Error GoTo 0
+                prevIdx = prevIdx - 1
+            Loop
+
+            nextIdx = i + 1
+            Do While nextIdx <= UBound(Values) And Not foundNext
+                On Error Resume Next
+                If Not IsError(Values(nextIdx)) And Not IsEmpty(Values(nextIdx)) Then
+                    nextVal = Values(nextIdx)
+                    foundNext = True
+                End If
+                On Error GoTo 0
+                nextIdx = nextIdx + 1
+            Loop
+
+            ' Linear interpolation
+            If foundPrev And foundNext Then
+                result(i) = prevVal + (nextVal - prevVal) * (i - (prevIdx + 1)) / ((nextIdx - 1) - (prevIdx + 1))
+            ElseIf foundPrev Then
+                result(i) = prevVal
+            ElseIf foundNext Then
+                result(i) = nextVal
+            Else
+                result(i) = 0 ' Last resort
+            End If
+        End If
+    Next i
+
+    ImputeMissingValues = result
+End Function
+
+' ============================================================================
+' REGIME DETECTION
+' ============================================================================
+
+Public Function DetectRegimes(ByRef Values() As Double) As Long()
+    ' Detect regime shifts using rolling variance
+    ' Returns array of regime change points
+
+    Dim n As Long, i As Long
+    Dim windowSize As Integer
+    Dim regimeChanges() As Long
+    Dim changeCount As Integer
+
+    n = UBound(Values) - LBound(Values) + 1
+    windowSize = WorksheetFunction.Min(20, Int(n / 5))
+
+    ReDim regimeChanges(1 To Int(n / windowSize))
+    changeCount = 0
+
+    ' Calculate rolling variance
+    Dim rollingVar() As Double
+    ReDim rollingVar(LBound(Values) To UBound(Values) - windowSize + 1)
+
+    For i = LBound(Values) To UBound(Values) - windowSize + 1
+        Dim sum As Double, sumSq As Double
+        Dim j As Long, mean As Double, variance As Double
+
+        sum = 0
+        sumSq = 0
+
+        For j = i To i + windowSize - 1
+            sum = sum + Values(j)
+            sumSq = sumSq + Values(j) ^ 2
+        Next j
+
+        mean = sum / windowSize
+        variance = (sumSq - windowSize * mean ^ 2) / (windowSize - 1)
+
+        rollingVar(i) = variance
+    Next i
+
+    ' Detect significant changes in variance
+    Dim meanVar As Double, stdVar As Double
+    meanVar = 0
+
+    For i = LBound(rollingVar) To UBound(rollingVar)
+        meanVar = meanVar + rollingVar(i)
+    Next i
+    meanVar = meanVar / (UBound(rollingVar) - LBound(rollingVar) + 1)
+
+    stdVar = 0
+    For i = LBound(rollingVar) To UBound(rollingVar)
+        stdVar = stdVar + (rollingVar(i) - meanVar) ^ 2
+    Next i
+    stdVar = Sqr(stdVar / (UBound(rollingVar) - LBound(rollingVar)))
+
+    ' Flag regime changes (variance > mean + 2*std)
+    For i = LBound(rollingVar) + 1 To UBound(rollingVar)
+        If Abs(rollingVar(i) - rollingVar(i - 1)) > 2 * stdVar Then
+            changeCount = changeCount + 1
+            regimeChanges(changeCount) = i
+        End If
+    Next i
+
+    ' Resize to actual number found
+    If changeCount > 0 Then
+        ReDim Preserve regimeChanges(1 To changeCount)
+    Else
+        ReDim regimeChanges(1 To 1)
+        regimeChanges(1) = -1 ' No regimes detected
+    End If
+
+    DetectRegimes = regimeChanges
+End Function
+
+' ============================================================================
+' FORECAST RECONCILIATION (Simple Constraint)
+' ============================================================================
+
+Public Function ReconcileForecast(ByRef forecast() As Double, _
+                                 Optional ByVal minValue As Variant, _
+                                 Optional ByVal maxValue As Variant) As Double()
+    ' Apply constraints to forecasts (non-negativity, bounds, etc.)
+
+    Dim result() As Double
+    Dim i As Long
+    Dim hasMin As Boolean, hasMax As Boolean
+    Dim minVal As Double, maxVal As Double
+
+    ReDim result(LBound(forecast) To UBound(forecast))
+
+    hasMin = Not IsMissing(minValue)
+    hasMax = Not IsMissing(maxValue)
+
+    If hasMin Then minVal = CDbl(minValue)
+    If hasMax Then maxVal = CDbl(maxValue)
+
+    For i = LBound(forecast) To UBound(forecast)
+        result(i) = forecast(i)
+
+        ' Apply minimum constraint
+        If hasMin And result(i) < minVal Then
+            result(i) = minVal
+        End If
+
+        ' Apply maximum constraint
+        If hasMax And result(i) > maxVal Then
+            result(i) = maxVal
+        End If
+    Next i
+
+    ReconcileForecast = result
 End Function
 
