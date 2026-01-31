@@ -3881,7 +3881,7 @@ Public Function TSBMethod(ByRef tsData As TimeSeriesData, _
     Dim demandSize As Double
     Dim interArrivalTime As Double
     Dim lastDemandIdx As Long
-    Dim periods Since LastDemand As Long
+    Dim periodsSinceLastDemand As Long
 
     Values = tsData.Values
     n = UBound(Values) - LBound(Values) + 1
