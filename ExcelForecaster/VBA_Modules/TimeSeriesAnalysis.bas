@@ -3520,8 +3520,8 @@ Public Function SARIMAForecast(ByRef tsData As TimeSeriesData, _
 
     ' Calculate accuracy metrics
     result.MAPE = CalculateMAPE(Values, result.FittedValues)
-    result.MAE = CalculateMAE(Values, result.FittedValues)
-    result.RMSE = CalculateRMSE(Values, result.FittedValues)
+    result.MAE = CalculateMAE(result.Residuals)
+    result.RMSE = CalculateRMSE(result.Residuals)
     result.MBE = CalculateMBE(Values, result.FittedValues)
 
     result.ModelName = "SARIMA(" & p & "," & d & "," & q & ")(" & sP & "," & sD & "," & sQ & ")[" & seasonalPeriod & "]"
@@ -3811,8 +3811,8 @@ Public Function FourierForecast(ByRef tsData As TimeSeriesData, _
 
     ' Calculate accuracy metrics
     result.MAPE = CalculateMAPE(Values, result.FittedValues)
-    result.MAE = CalculateMAE(Values, result.FittedValues)
-    result.RMSE = CalculateRMSE(Values, result.FittedValues)
+    result.MAE = CalculateMAE(result.Residuals)
+    result.RMSE = CalculateRMSE(result.Residuals)
     result.MBE = CalculateMBE(Values, result.FittedValues)
 
     result.ModelName = "Fourier[K=" & numTerms & "]"
@@ -3977,8 +3977,8 @@ Public Function TSBMethod(ByRef tsData As TimeSeriesData, _
 
     ' Calculate accuracy metrics
     result.MAPE = CalculateMAPE(Values, result.FittedValues)
-    result.MAE = CalculateMAE(Values, result.FittedValues)
-    result.RMSE = CalculateRMSE(Values, result.FittedValues)
+    result.MAE = CalculateMAE(result.Residuals)
+    result.RMSE = CalculateRMSE(result.Residuals)
     result.MBE = CalculateMBE(Values, result.FittedValues)
 
     result.Alpha = Alpha
@@ -4097,8 +4097,8 @@ Public Function SBAMethod(ByRef tsData As TimeSeriesData, _
 
     ' Calculate accuracy metrics
     result.MAPE = CalculateMAPE(Values, result.FittedValues)
-    result.MAE = CalculateMAE(Values, result.FittedValues)
-    result.RMSE = CalculateRMSE(Values, result.FittedValues)
+    result.MAE = CalculateMAE(result.Residuals)
+    result.RMSE = CalculateRMSE(result.Residuals)
     result.MBE = CalculateMBE(Values, result.FittedValues)
 
     result.Alpha = Alpha
@@ -4248,8 +4248,8 @@ Private Function HoltLinear(ByRef tsData As TimeSeriesData, ByVal horizon As Int
 
     ' Metrics
     result.MAPE = CalculateMAPE(Values, result.FittedValues)
-    result.MAE = CalculateMAE(Values, result.FittedValues)
-    result.RMSE = CalculateRMSE(Values, result.FittedValues)
+    result.MAE = CalculateMAE(result.Residuals)
+    result.RMSE = CalculateRMSE(result.Residuals)
     result.MBE = CalculateMBE(Values, result.FittedValues)
 
     result.Alpha = Alpha
@@ -4335,8 +4335,8 @@ Private Function DampedTrend(ByRef tsData As TimeSeriesData, ByVal horizon As In
 
     ' Metrics
     result.MAPE = CalculateMAPE(Values, result.FittedValues)
-    result.MAE = CalculateMAE(Values, result.FittedValues)
-    result.RMSE = CalculateRMSE(Values, result.FittedValues)
+    result.MAE = CalculateMAE(result.Residuals)
+    result.RMSE = CalculateRMSE(result.Residuals)
     result.MBE = CalculateMBE(Values, result.FittedValues)
 
     result.Alpha = Alpha
@@ -4440,8 +4440,8 @@ Private Function SimpleSeasonalSmoothing(ByRef tsData As TimeSeriesData, _
 
     ' Metrics
     result.MAPE = CalculateMAPE(Values, result.FittedValues)
-    result.MAE = CalculateMAE(Values, result.FittedValues)
-    result.RMSE = CalculateRMSE(Values, result.FittedValues)
+    result.MAE = CalculateMAE(result.Residuals)
+    result.RMSE = CalculateRMSE(result.Residuals)
     result.MBE = CalculateMBE(Values, result.FittedValues)
 
     result.Alpha = Alpha
@@ -4926,8 +4926,8 @@ Public Function NeuralNetworkForecast(ByRef tsData As TimeSeriesData, _
 
     ' Metrics
     result.MAPE = CalculateMAPE(Values, result.FittedValues)
-    result.MAE = CalculateMAE(Values, result.FittedValues)
-    result.RMSE = CalculateRMSE(Values, result.FittedValues)
+    result.MAE = CalculateMAE(result.Residuals)
+    result.RMSE = CalculateRMSE(result.Residuals)
     result.MBE = CalculateMBE(Values, result.FittedValues)
 
     result.ModelName = "NeuralNet[" & numLags & "-" & hiddenNodes & "-1]"
@@ -5395,8 +5395,8 @@ Public Function BayesianModelAveraging(ByRef models() As ForecastResult, _
 
     ' Calculate metrics
     result.MAPE = CalculateMAPE(actualValues, result.FittedValues)
-    result.MAE = CalculateMAE(actualValues, result.FittedValues)
-    result.RMSE = CalculateRMSE(actualValues, result.FittedValues)
+    result.MAE = CalculateMAE(result.Residuals)
+    result.RMSE = CalculateRMSE(result.Residuals)
     result.MBE = CalculateMBE(actualValues, result.FittedValues)
 
     ' Build model name showing weights
@@ -5493,9 +5493,16 @@ Public Function TimeSeriesCrossValidation(ByRef tsData As TimeSeriesData, _
 
             ' Calculate metrics for this fold
             Dim foldMAPE As Double, foldMAE As Double, foldRMSE As Double
+            Dim foldResiduals() As Double
+            ReDim foldResiduals(1 To horizon)
+
+            For j = 1 To horizon
+                foldResiduals(j) = testValues(j) - forecastValues(j)
+            Next j
+
             foldMAPE = CalculateMAPE(testValues, forecastValues)
-            foldMAE = CalculateMAE(testValues, forecastValues)
-            foldRMSE = CalculateRMSE(testValues, forecastValues)
+            foldMAE = CalculateMAE(foldResiduals)
+            foldRMSE = CalculateRMSE(foldResiduals)
 
             If foldMAPE < 9999 Then ' Valid forecast
                 totalMAPE = totalMAPE + foldMAPE
@@ -5585,8 +5592,8 @@ Public Function DynamicHarmonicRegression(ByRef tsData As TimeSeriesData, _
 
     ' Calculate metrics
     result.MAPE = CalculateMAPE(Values, result.FittedValues)
-    result.MAE = CalculateMAE(Values, result.FittedValues)
-    result.RMSE = CalculateRMSE(Values, result.FittedValues)
+    result.MAE = CalculateMAE(result.Residuals)
+    result.RMSE = CalculateRMSE(result.Residuals)
     result.MBE = CalculateMBE(Values, result.FittedValues)
 
     result.ModelName = "DHR (Fourier+ARIMA)"
@@ -5826,8 +5833,8 @@ Public Function KalmanFilterForecast(ByRef tsData As TimeSeriesData, _
 
     ' Calculate metrics
     result.MAPE = CalculateMAPE(Values, result.FittedValues)
-    result.MAE = CalculateMAE(Values, result.FittedValues)
-    result.RMSE = CalculateRMSE(Values, result.FittedValues)
+    result.MAE = CalculateMAE(result.Residuals)
+    result.RMSE = CalculateRMSE(result.Residuals)
     result.MBE = CalculateMBE(Values, result.FittedValues)
 
     result.ModelName = "KalmanFilter"
@@ -6010,8 +6017,8 @@ Public Function STLDecomposition(ByRef tsData As TimeSeriesData, _
 
     ' Calculate metrics
     result.MAPE = CalculateMAPE(Values, result.FittedValues)
-    result.MAE = CalculateMAE(Values, result.FittedValues)
-    result.RMSE = CalculateRMSE(Values, result.FittedValues)
+    result.MAE = CalculateMAE(result.Residuals)
+    result.RMSE = CalculateRMSE(result.Residuals)
     result.MBE = CalculateMBE(Values, result.FittedValues)
 
     result.ModelName = "STL[" & m & "]"
@@ -7155,8 +7162,8 @@ Public Function HybridDecompositionForecast(ByRef tsData As TimeSeriesData, _
 
     ' Calculate metrics
     result.MAPE = CalculateMAPE(Values, result.FittedValues)
-    result.MAE = CalculateMAE(Values, result.FittedValues)
-    result.RMSE = CalculateRMSE(Values, result.FittedValues)
+    result.MAE = CalculateMAE(result.Residuals)
+    result.RMSE = CalculateRMSE(result.Residuals)
     result.MBE = CalculateMBE(Values, result.FittedValues)
 
     result.ModelName = "Hybrid(STL+ARIMA)"
