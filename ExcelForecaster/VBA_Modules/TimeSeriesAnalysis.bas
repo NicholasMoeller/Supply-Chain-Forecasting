@@ -96,6 +96,21 @@ Public Type MultiObjectiveScore
     CompositeScore As Double ' Weighted combination
 End Type
 
+' Pattern Match Type
+Public Type PatternMatch
+    StartIndex As Long
+    EndIndex As Long
+    Similarity As Double ' 0-1, higher is more similar
+    Pattern() As Double
+End Type
+
+' Ensemble Trim Result Type
+Public Type EnsembleTrimResult
+    TrimmedModels() As ForecastResult
+    NumModels As Integer
+    AvgImprovement As Double ' MAPE improvement from trimming
+End Type
+
 ' ============================================================================
 ' SIMPLE EXPONENTIAL SMOOTHING
 ' ============================================================================
@@ -6678,5 +6693,477 @@ Public Function CalculateFVA(ByRef actual() As Double, _
     End If
 
     CalculateFVA = fva
+End Function
+
+' ============================================================================
+' ENSEMBLE TRIMMING (Remove Underperforming Models)
+' ============================================================================
+
+Public Function TrimEnsemble(ByRef models() As ForecastResult, _
+                            ByVal numModels As Integer, _
+                            Optional ByVal keepTopN As Integer = 0, _
+                            Optional ByVal trimThreshold As Double = 0) As EnsembleTrimResult
+    ' Remove worst performing models before ensemble averaging
+    ' keepTopN: Keep only top N models (0 = use threshold)
+    ' trimThreshold: Remove models with MAPE > avg + threshold*std (0 = use keepTopN)
+
+    Dim trimResult As EnsembleTrimResult
+    Dim i As Integer, j As Integer
+    Dim avgMAPE As Double, stdMAPE As Double
+    Dim cutoffMAPE As Double
+
+    ' Calculate average and std dev of MAPE
+    avgMAPE = 0
+    For i = 1 To numModels
+        avgMAPE = avgMAPE + models(i).MAPE
+    Next i
+    avgMAPE = avgMAPE / numModels
+
+    stdMAPE = 0
+    For i = 1 To numModels
+        stdMAPE = stdMAPE + (models(i).MAPE - avgMAPE) ^ 2
+    Next i
+    stdMAPE = Sqr(stdMAPE / numModels)
+
+    ' Determine trimming strategy
+    If keepTopN > 0 Then
+        ' Strategy 1: Keep only top N models
+        ' Sort models by MAPE
+        Dim sortedIndices() As Integer
+        ReDim sortedIndices(1 To numModels)
+
+        For i = 1 To numModels
+            sortedIndices(i) = i
+        Next i
+
+        ' Bubble sort
+        Dim temp As Integer
+        For i = 1 To numModels - 1
+            For j = i + 1 To numModels
+                If models(sortedIndices(i)).MAPE > models(sortedIndices(j)).MAPE Then
+                    temp = sortedIndices(i)
+                    sortedIndices(i) = sortedIndices(j)
+                    sortedIndices(j) = temp
+                End If
+            Next j
+        Next i
+
+        ' Keep top N
+        Dim numToKeep As Integer
+        numToKeep = WorksheetFunction.Min(keepTopN, numModels)
+
+        ReDim trimResult.TrimmedModels(1 To numToKeep)
+        For i = 1 To numToKeep
+            trimResult.TrimmedModels(i) = models(sortedIndices(i))
+        Next i
+
+        trimResult.NumModels = numToKeep
+    Else
+        ' Strategy 2: Remove outliers beyond threshold
+        cutoffMAPE = avgMAPE + trimThreshold * stdMAPE
+
+        ' Count models to keep
+        Dim keepCount As Integer
+        keepCount = 0
+
+        For i = 1 To numModels
+            If models(i).MAPE <= cutoffMAPE Then
+                keepCount = keepCount + 1
+            End If
+        Next i
+
+        ' Keep at least 3 models
+        If keepCount < 3 Then keepCount = WorksheetFunction.Min(3, numModels)
+
+        ReDim trimResult.TrimmedModels(1 To keepCount)
+
+        Dim idx As Integer
+        idx = 0
+
+        For i = 1 To numModels
+            If models(i).MAPE <= cutoffMAPE Or idx < 3 Then
+                idx = idx + 1
+                If idx <= keepCount Then
+                    trimResult.TrimmedModels(idx) = models(i)
+                End If
+            End If
+        Next i
+
+        trimResult.NumModels = keepCount
+    End If
+
+    ' Calculate improvement
+    Dim newAvgMAPE As Double
+    newAvgMAPE = 0
+
+    For i = 1 To trimResult.NumModels
+        newAvgMAPE = newAvgMAPE + trimResult.TrimmedModels(i).MAPE
+    Next i
+    newAvgMAPE = newAvgMAPE / trimResult.NumModels
+
+    trimResult.AvgImprovement = avgMAPE - newAvgMAPE
+
+    TrimEnsemble = trimResult
+End Function
+
+' ============================================================================
+' WEIGHTED MEDIAN (Robust to Outliers)
+' ============================================================================
+
+Public Function WeightedMedianForecast(ByRef forecasts() As ForecastResult, _
+                                      ByRef weights() As Double, _
+                                      ByVal numModels As Integer, _
+                                      ByVal horizon As Integer) As ForecastResult
+    ' Calculate weighted median instead of weighted mean
+    ' More robust to outlier forecasts
+
+    Dim result As ForecastResult
+    Dim i As Integer, h As Integer
+
+    ' Initialize result arrays
+    ReDim result.ForecastValues(1 To horizon)
+    ReDim result.Lower80(1 To horizon)
+    ReDim result.Upper80(1 To horizon)
+    ReDim result.Lower95(1 To horizon)
+    ReDim result.Upper95(1 To horizon)
+
+    ' For each horizon, calculate weighted median
+    For h = 1 To horizon
+        ' Extract forecasts for this horizon
+        Dim horizonForecasts() As Double
+        ReDim horizonForecasts(1 To numModels)
+
+        For i = 1 To numModels
+            horizonForecasts(i) = forecasts(i).ForecastValues(h)
+        Next i
+
+        ' Calculate weighted median
+        result.ForecastValues(h) = CalculateWeightedMedian(horizonForecasts, weights, numModels)
+
+        ' Calculate weighted median for intervals
+        ReDim horizonForecasts(1 To numModels)
+        For i = 1 To numModels
+            horizonForecasts(i) = forecasts(i).Lower95(h)
+        Next i
+        result.Lower95(h) = CalculateWeightedMedian(horizonForecasts, weights, numModels)
+
+        ReDim horizonForecasts(1 To numModels)
+        For i = 1 To numModels
+            horizonForecasts(i) = forecasts(i).Upper95(h)
+        Next i
+        result.Upper95(h) = CalculateWeightedMedian(horizonForecasts, weights, numModels)
+
+        ReDim horizonForecasts(1 To numModels)
+        For i = 1 To numModels
+            horizonForecasts(i) = forecasts(i).Lower80(h)
+        Next i
+        result.Lower80(h) = CalculateWeightedMedian(horizonForecasts, weights, numModels)
+
+        ReDim horizonForecasts(1 To numModels)
+        For i = 1 To numModels
+            horizonForecasts(i) = forecasts(i).Upper80(h)
+        Next i
+        result.Upper80(h) = CalculateWeightedMedian(horizonForecasts, weights, numModels)
+    Next h
+
+    result.ModelName = "Weighted Median Ensemble"
+
+    WeightedMedianForecast = result
+End Function
+
+Private Function CalculateWeightedMedian(ByRef values() As Double, _
+                                        ByRef weights() As Double, _
+                                        ByVal n As Integer) As Double
+    ' Calculate weighted median
+    Dim sorted() As Double
+    Dim sortedWeights() As Double
+    Dim indices() As Integer
+    Dim i As Integer, j As Integer
+
+    ReDim sorted(1 To n)
+    ReDim sortedWeights(1 To n)
+    ReDim indices(1 To n)
+
+    ' Initialize indices
+    For i = 1 To n
+        indices(i) = i
+    Next i
+
+    ' Sort by values
+    Dim temp As Integer
+    For i = 1 To n - 1
+        For j = i + 1 To n
+            If values(indices(i)) > values(indices(j)) Then
+                temp = indices(i)
+                indices(i) = indices(j)
+                indices(j) = temp
+            End If
+        Next j
+    Next i
+
+    ' Create sorted arrays
+    For i = 1 To n
+        sorted(i) = values(indices(i))
+        sortedWeights(i) = weights(indices(i))
+    Next i
+
+    ' Find weighted median
+    Dim cumulativeWeight As Double
+    Dim halfWeight As Double
+    Dim totalWeight As Double
+
+    totalWeight = 0
+    For i = 1 To n
+        totalWeight = totalWeight + sortedWeights(i)
+    Next i
+
+    halfWeight = totalWeight / 2
+    cumulativeWeight = 0
+
+    For i = 1 To n
+        cumulativeWeight = cumulativeWeight + sortedWeights(i)
+        If cumulativeWeight >= halfWeight Then
+            CalculateWeightedMedian = sorted(i)
+            Exit Function
+        End If
+    Next i
+
+    ' Fallback
+    CalculateWeightedMedian = sorted(Int(n / 2))
+End Function
+
+' ============================================================================
+' PATTERN RECOGNITION (Find Similar Historical Patterns)
+' ============================================================================
+
+Public Function FindSimilarPatterns(ByRef Values() As Double, _
+                                   ByVal patternLength As Integer, _
+                                   Optional ByVal numMatches As Integer = 3) As PatternMatch()
+    ' Find historical patterns similar to recent data
+    ' Uses DTW (Dynamic Time Warping) distance
+
+    Dim matches() As PatternMatch
+    ReDim matches(1 To numMatches)
+
+    Dim n As Long, i As Long, j As Long
+    Dim recentPattern() As Double
+
+    n = UBound(Values) - LBound(Values) + 1
+
+    If n < patternLength * 2 Then
+        ' Not enough data
+        FindSimilarPatterns = matches
+        Exit Function
+    End If
+
+    ' Extract recent pattern
+    ReDim recentPattern(1 To patternLength)
+    For i = 1 To patternLength
+        recentPattern(i) = Values(UBound(Values) - patternLength + i)
+    Next i
+
+    ' Search for similar patterns in history
+    Dim searchLength As Long
+    searchLength = n - patternLength - patternLength ' Don't include recent period
+
+    Dim similarities() As Double
+    Dim indices() As Long
+
+    ReDim similarities(1 To searchLength)
+    ReDim indices(1 To searchLength)
+
+    ' Calculate similarity for each historical window
+    For i = 1 To searchLength
+        Dim historicalPattern() As Double
+        ReDim historicalPattern(1 To patternLength)
+
+        For j = 1 To patternLength
+            historicalPattern(j) = Values(LBound(Values) + i - 1 + j - 1)
+        Next j
+
+        ' Calculate similarity (1 - normalized distance)
+        similarities(i) = CalculatePatternSimilarity(recentPattern, historicalPattern, patternLength)
+        indices(i) = i
+    Next i
+
+    ' Sort by similarity
+    Dim temp As Double
+    Dim tempIdx As Long
+
+    For i = 1 To searchLength - 1
+        For j = i + 1 To searchLength
+            If similarities(i) < similarities(j) Then
+                temp = similarities(i)
+                similarities(i) = similarities(j)
+                similarities(j) = temp
+
+                tempIdx = indices(i)
+                indices(i) = indices(j)
+                indices(j) = tempIdx
+            End If
+        Next j
+    Next i
+
+    ' Return top matches
+    Dim numToReturn As Integer
+    numToReturn = WorksheetFunction.Min(numMatches, searchLength)
+
+    ReDim Preserve matches(1 To numToReturn)
+
+    For i = 1 To numToReturn
+        matches(i).StartIndex = LBound(Values) + indices(i) - 1
+        matches(i).EndIndex = matches(i).StartIndex + patternLength - 1
+        matches(i).Similarity = similarities(i)
+
+        ReDim matches(i).Pattern(1 To patternLength)
+        For j = 1 To patternLength
+            matches(i).Pattern(j) = Values(matches(i).StartIndex + j - 1)
+        Next j
+    Next i
+
+    FindSimilarPatterns = matches
+End Function
+
+Private Function CalculatePatternSimilarity(ByRef pattern1() As Double, _
+                                           ByRef pattern2() As Double, _
+                                           ByVal length As Integer) As Double
+    ' Calculate similarity using normalized Euclidean distance
+    Dim distance As Double, maxDistance As Double
+    Dim i As Integer
+
+    ' Normalize patterns
+    Dim mean1 As Double, mean2 As Double
+    Dim std1 As Double, std2 As Double
+
+    mean1 = 0: mean2 = 0
+    For i = 1 To length
+        mean1 = mean1 + pattern1(i)
+        mean2 = mean2 + pattern2(i)
+    Next i
+    mean1 = mean1 / length
+    mean2 = mean2 / length
+
+    std1 = 0: std2 = 0
+    For i = 1 To length
+        std1 = std1 + (pattern1(i) - mean1) ^ 2
+        std2 = std2 + (pattern2(i) - mean2) ^ 2
+    Next i
+    std1 = Sqr(std1 / length)
+    std2 = Sqr(std2 / length)
+
+    If std1 = 0 Then std1 = 1
+    If std2 = 0 Then std2 = 1
+
+    ' Calculate Euclidean distance on normalized values
+    distance = 0
+    For i = 1 To length
+        Dim norm1 As Double, norm2 As Double
+        norm1 = (pattern1(i) - mean1) / std1
+        norm2 = (pattern2(i) - mean2) / std2
+
+        distance = distance + (norm1 - norm2) ^ 2
+    Next i
+
+    distance = Sqr(distance / length)
+
+    ' Convert to similarity (0-1, higher is more similar)
+    maxDistance = Sqr(8) ' Max distance for normalized data ≈ 2*sqrt(2)
+
+    CalculatePatternSimilarity = WorksheetFunction.Max(0, 1 - (distance / maxDistance))
+End Function
+
+' ============================================================================
+' DECOMPOSITION-BASED HYBRID FORECASTING
+' ============================================================================
+
+Public Function HybridDecompositionForecast(ByRef tsData As TimeSeriesData, _
+                                           ByVal horizon As Integer) As ForecastResult
+    ' Hybrid approach: Decompose → Forecast each component separately → Recombine
+    ' Trend: Linear regression, Seasonal: Seasonal naive, Remainder: ARIMA
+
+    On Error GoTo ErrorHandler
+
+    Dim result As ForecastResult
+    Dim Values() As Double
+    Dim n As Long
+
+    Values = tsData.Values
+    n = UBound(Values) - LBound(Values) + 1
+
+    ' Detect seasonality
+    Dim seasonalInfo As SeasonalityInfo
+    seasonalInfo = DetectSeasonality(tsData)
+
+    Dim m As Integer
+    If seasonalInfo.HasSeasonality Then
+        m = seasonalInfo.DetectedFrequency
+    Else
+        m = 1
+    End If
+
+    ' Perform STL decomposition
+    Dim stlResult As ForecastResult
+    If m > 1 Then
+        stlResult = STLDecomposition(tsData, horizon, m)
+    Else
+        ' No seasonality, use simple trend
+        stlResult = LinearTrendForecast(tsData, horizon)
+    End If
+
+    ' Enhance with ARIMA on residuals
+    Dim residualData As TimeSeriesData
+    ReDim residualData.Values(LBound(stlResult.Residuals) To UBound(stlResult.Residuals))
+
+    Dim i As Long
+    For i = LBound(stlResult.Residuals) To UBound(stlResult.Residuals)
+        residualData.Values(i) = stlResult.Residuals(i)
+    Next i
+    residualData.Frequency = m
+
+    ' Forecast residuals with ARIMA
+    Dim residualForecast As ForecastResult
+    residualForecast = SimpleARIMA(residualData, horizon)
+
+    ' Combine STL forecast with ARIMA residual forecast
+    ReDim result.FittedValues(LBound(Values) To UBound(Values))
+    ReDim result.Residuals(LBound(Values) To UBound(Values))
+    ReDim result.ForecastValues(1 To horizon)
+    ReDim result.Lower80(1 To horizon)
+    ReDim result.Upper80(1 To horizon)
+    ReDim result.Lower95(1 To horizon)
+    ReDim result.Upper95(1 To horizon)
+
+    ' Fitted values
+    For i = LBound(Values) To UBound(Values)
+        result.FittedValues(i) = stlResult.FittedValues(i)
+        result.Residuals(i) = Values(i) - result.FittedValues(i)
+    Next i
+
+    ' Forecasts = STL + ARIMA residuals
+    For i = 1 To horizon
+        result.ForecastValues(i) = stlResult.ForecastValues(i) + residualForecast.ForecastValues(i)
+
+        ' Combine uncertainty
+        result.Lower95(i) = stlResult.Lower95(i) + residualForecast.Lower95(i)
+        result.Upper95(i) = stlResult.Upper95(i) + residualForecast.Upper95(i)
+        result.Lower80(i) = stlResult.Lower80(i) + residualForecast.Lower80(i)
+        result.Upper80(i) = stlResult.Upper80(i) + residualForecast.Upper80(i)
+    Next i
+
+    ' Calculate metrics
+    result.MAPE = CalculateMAPE(Values, result.FittedValues)
+    result.MAE = CalculateMAE(Values, result.FittedValues)
+    result.RMSE = CalculateRMSE(Values, result.FittedValues)
+    result.MBE = CalculateMBE(Values, result.FittedValues)
+
+    result.ModelName = "Hybrid(STL+ARIMA)"
+
+    HybridDecompositionForecast = result
+    Exit Function
+
+ErrorHandler:
+    result.MAPE = 9999
+    result.ModelName = "Hybrid (Error)"
+    HybridDecompositionForecast = result
 End Function
 
