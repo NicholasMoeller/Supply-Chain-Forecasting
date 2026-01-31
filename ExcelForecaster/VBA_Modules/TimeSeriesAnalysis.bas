@@ -3543,7 +3543,6 @@ Private Function DetectSeasonalPeriod(ByRef Values() As Double) As Integer
     Dim acf() As Double
     Dim i As Integer
     Dim maxACF As Double
-    Dim maxLag As Integer
 
     n = UBound(Values) - LBound(Values) + 1
     maxLag = WorksheetFunction.Min(24, Int(n / 3))
@@ -3611,22 +3610,22 @@ Private Function YuleWalkerAR(ByRef acf() As Double, ByVal order As Integer) As 
     Dim params() As Double
     Dim i As Integer, j As Integer
     Dim R() As Double ' Autocorrelation matrix
-    Dim r() As Double ' Autocorrelation vector
+    Dim rVec() As Double ' Autocorrelation vector (renamed from r - VBA is case-insensitive)
 
     ReDim params(1 To order)
     ReDim R(1 To order, 1 To order)
-    ReDim r(1 To order)
+    ReDim rVec(1 To order)
 
     ' Build autocorrelation matrix
     For i = 1 To order
-        r(i) = acf(i)
+        rVec(i) = acf(i)
         For j = 1 To order
             R(i, j) = acf(Abs(i - j))
         Next j
     Next i
 
     ' Solve using simple Gaussian elimination (for small orders)
-    params = SolveLinearSystem(R, r, order)
+    params = SolveLinearSystem(R, rVec, order)
 
     YuleWalkerAR = params
 End Function
