@@ -68,6 +68,34 @@ Public Type OptimizedParameters
     BestMAPE As Double
 End Type
 
+' Probabilistic Forecast Type
+Public Type ProbabilisticForecast
+    Percentile05() As Double ' 5th percentile
+    Percentile25() As Double ' 25th percentile (Q1)
+    Percentile50() As Double ' 50th percentile (median)
+    Percentile75() As Double ' 75th percentile (Q3)
+    Percentile95() As Double ' 95th percentile
+    Mean() As Double ' Mean forecast
+    StdDev() As Double ' Standard deviation at each horizon
+End Type
+
+' Forecast Value Added Type
+Public Type ForecastValueAdded
+    NaiveMAPE As Double ' Naive forecast MAPE (baseline)
+    ModelMAPE As Double ' Advanced model MAPE
+    FVA As Double ' FVA = (Naive - Model) / Naive * 100
+    ImprovedAccuracy As Boolean ' True if FVA > 0
+End Type
+
+' Multi-Objective Score Type
+Public Type MultiObjectiveScore
+    MAPE As Double
+    MAE As Double
+    RMSE As Double
+    Bias As Double
+    CompositeScore As Double ' Weighted combination
+End Type
+
 ' ============================================================================
 ' SIMPLE EXPONENTIAL SMOOTHING
 ' ============================================================================
@@ -6426,5 +6454,229 @@ Public Function ReconcileForecast(ByRef forecast() As Double, _
     Next i
 
     ReconcileForecast = result
+End Function
+
+' ============================================================================
+' PROBABILISTIC FORECASTING (Monte Carlo Simulation)
+' ============================================================================
+
+Public Function ProbabilisticForecastMC(ByRef baseResult As ForecastResult, _
+                                       ByVal horizon As Integer, _
+                                       Optional ByVal numSimulations As Integer = 1000) As ProbabilisticForecast
+    ' Generate full probability distribution using Monte Carlo simulation
+    ' Returns percentiles (5%, 25%, 50%, 75%, 95%) for each horizon step
+
+    Dim probForecast As ProbabilisticForecast
+    Dim simulations() As Double ' numSimulations x horizon
+    Dim i As Long, j As Integer, h As Integer
+
+    ReDim simulations(1 To numSimulations, 1 To horizon)
+    ReDim probForecast.Percentile05(1 To horizon)
+    ReDim probForecast.Percentile25(1 To horizon)
+    ReDim probForecast.Percentile50(1 To horizon)
+    ReDim probForecast.Percentile75(1 To horizon)
+    ReDim probForecast.Percentile95(1 To horizon)
+    ReDim probForecast.Mean(1 To horizon)
+    ReDim probForecast.StdDev(1 To horizon)
+
+    ' Get residual standard deviation
+    Dim sigma As Double
+    sigma = CalculateStdDev(baseResult.Residuals)
+
+    ' Generate simulations using bootstrap of residuals
+    Dim residualCount As Long
+    residualCount = UBound(baseResult.Residuals) - LBound(baseResult.Residuals) + 1
+
+    Randomize
+
+    For i = 1 To numSimulations
+        For h = 1 To horizon
+            ' Base forecast
+            Dim forecast As Double
+            forecast = baseResult.ForecastValues(h)
+
+            ' Add random error (bootstrap from residuals)
+            Dim cumulativeError As Double
+            cumulativeError = 0
+
+            For j = 1 To h
+                ' Sample random residual
+                Dim randomIdx As Long
+                randomIdx = Int(Rnd() * residualCount) + LBound(baseResult.Residuals)
+                cumulativeError = cumulativeError + baseResult.Residuals(randomIdx) / Sqr(j)
+            Next j
+
+            simulations(i, h) = forecast + cumulativeError
+        Next h
+    Next i
+
+    ' Calculate percentiles for each horizon
+    For h = 1 To horizon
+        ' Extract simulations for this horizon
+        Dim horizonSims() As Double
+        ReDim horizonSims(1 To numSimulations)
+
+        For i = 1 To numSimulations
+            horizonSims(i) = simulations(i, h)
+        Next i
+
+        ' Sort
+        Call BubbleSortDouble(horizonSims)
+
+        ' Calculate percentiles
+        probForecast.Percentile05(h) = horizonSims(Int(0.05 * numSimulations))
+        probForecast.Percentile25(h) = horizonSims(Int(0.25 * numSimulations))
+        probForecast.Percentile50(h) = horizonSims(Int(0.50 * numSimulations))
+        probForecast.Percentile75(h) = horizonSims(Int(0.75 * numSimulations))
+        probForecast.Percentile95(h) = horizonSims(Int(0.95 * numSimulations))
+
+        ' Calculate mean and std dev
+        Dim sum As Double, sumSq As Double
+        sum = 0
+        sumSq = 0
+
+        For i = 1 To numSimulations
+            sum = sum + horizonSims(i)
+            sumSq = sumSq + horizonSims(i) ^ 2
+        Next i
+
+        probForecast.Mean(h) = sum / numSimulations
+        probForecast.StdDev(h) = Sqr((sumSq - numSimulations * probForecast.Mean(h) ^ 2) / (numSimulations - 1))
+    Next h
+
+    ProbabilisticForecastMC = probForecast
+End Function
+
+' ============================================================================
+' ADAPTIVE LEARNING (Recency-Weighted Model Performance)
+' ============================================================================
+
+Public Function AdaptiveLearningWeights(ByRef models() As ForecastResult, _
+                                       ByVal numModels As Integer, _
+                                       ByRef actualValues() As Double, _
+                                       Optional ByVal decayFactor As Double = 0.95) As Double()
+    ' Calculate model weights with recency bias
+    ' Recent performance weighted higher - decayFactor: 0.95 = each older period gets 95% weight
+
+    Dim weights() As Double
+    ReDim weights(1 To numModels)
+
+    Dim n As Long
+    n = UBound(actualValues) - LBound(actualValues) + 1
+
+    Dim i As Integer, j As Long
+    Dim weightedErrors() As Double
+    ReDim weightedErrors(1 To numModels)
+
+    ' Calculate weighted MAPE for each model
+    For i = 1 To numModels
+        Dim weightedError As Double
+        Dim totalWeight As Double
+
+        weightedError = 0
+        totalWeight = 0
+
+        For j = LBound(actualValues) To UBound(actualValues)
+            Dim recencyWeight As Double
+            Dim periodsFromEnd As Long
+
+            periodsFromEnd = UBound(actualValues) - j
+            recencyWeight = decayFactor ^ periodsFromEnd
+
+            If actualValues(j) <> 0 And j >= LBound(models(i).FittedValues) And j <= UBound(models(i).FittedValues) Then
+                weightedError = weightedError + recencyWeight * Abs((actualValues(j) - models(i).FittedValues(j)) / actualValues(j))
+                totalWeight = totalWeight + recencyWeight
+            End If
+        Next j
+
+        If totalWeight > 0 Then
+            weightedErrors(i) = weightedError / totalWeight
+        Else
+            weightedErrors(i) = 9999
+        End If
+    Next i
+
+    ' Convert errors to weights (inverse)
+    Dim totalInverseError As Double
+    totalInverseError = 0
+
+    For i = 1 To numModels
+        If weightedErrors(i) > 0 And weightedErrors(i) < 9999 Then
+            weights(i) = 1 / weightedErrors(i)
+            totalInverseError = totalInverseError + weights(i)
+        Else
+            weights(i) = 0
+        End If
+    Next i
+
+    ' Normalize
+    If totalInverseError > 0 Then
+        For i = 1 To numModels
+            weights(i) = weights(i) / totalInverseError
+        Next i
+    Else
+        For i = 1 To numModels
+            weights(i) = 1 / numModels
+        Next i
+    End If
+
+    AdaptiveLearningWeights = weights
+End Function
+
+' ============================================================================
+' FORECAST VALUE ADDED (FVA)
+' ============================================================================
+
+Public Function CalculateFVA(ByRef actual() As Double, _
+                            ByRef modelForecast() As Double, _
+                            Optional ByVal naiveMethod As String = "LastValue") As ForecastValueAdded
+    ' Calculate Forecast Value Added vs naive baseline
+    ' FVA = (Naive Error - Model Error) / Naive Error * 100
+
+    Dim fva As ForecastValueAdded
+    Dim naiveForecast() As Double
+    Dim n As Long, i As Long
+
+    n = UBound(actual) - LBound(actual) + 1
+    ReDim naiveForecast(LBound(actual) To UBound(actual))
+
+    Select Case UCase(naiveMethod)
+        Case "LASTVALUE"
+            For i = LBound(actual) + 1 To UBound(actual)
+                naiveForecast(i) = actual(i - 1)
+            Next i
+            naiveForecast(LBound(actual)) = actual(LBound(actual))
+
+        Case "SEASONALNAIVE"
+            Dim seasonalPeriod As Integer
+            seasonalPeriod = 12
+
+            For i = LBound(actual) To UBound(actual)
+                If i >= LBound(actual) + seasonalPeriod Then
+                    naiveForecast(i) = actual(i - seasonalPeriod)
+                Else
+                    naiveForecast(i) = actual(LBound(actual))
+                End If
+            Next i
+
+        Case Else
+            For i = LBound(actual) + 1 To UBound(actual)
+                naiveForecast(i) = actual(i - 1)
+            Next i
+            naiveForecast(LBound(actual)) = actual(LBound(actual))
+    End Select
+
+    fva.NaiveMAPE = CalculateMAPE(actual, naiveForecast)
+    fva.ModelMAPE = CalculateMAPE(actual, modelForecast)
+
+    If fva.NaiveMAPE > 0 Then
+        fva.FVA = ((fva.NaiveMAPE - fva.ModelMAPE) / fva.NaiveMAPE) * 100
+        fva.ImprovedAccuracy = (fva.FVA > 0)
+    Else
+        fva.FVA = 0
+        fva.ImprovedAccuracy = False
+    End If
+
+    CalculateFVA = fva
 End Function
 

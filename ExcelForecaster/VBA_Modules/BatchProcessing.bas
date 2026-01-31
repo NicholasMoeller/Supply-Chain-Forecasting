@@ -3467,3 +3467,348 @@ Private Sub SuggestComponentGrouping(ByRef summary As ComponentSummary, _
         groupingConfidence = "High"
     End If
 End Sub
+
+' ============================================================================
+' ADVANCED VISUAL STORYTELLING - EXECUTIVE DASHBOARD
+' ============================================================================
+
+Public Sub CreateExecutiveDashboard(ws As Worksheet, summaries() As ComponentSummary, numComponents As Integer)
+    ' Create executive-level KPI dashboard with visual storytelling
+    ' Shows: Portfolio health, risk level, accuracy distribution, demand patterns
+
+    On Error Resume Next
+
+    Dim startRow As Long, startCol As Long
+    startRow = 2
+    startCol = 75 ' Column BW - far right
+
+    ' Clear existing content
+    ws.Range(ws.Cells(startRow, startCol), ws.Cells(startRow + 50, startCol + 15)).Clear
+
+    ' Title
+    With ws.Cells(startRow, startCol)
+        .Value = "EXECUTIVE DASHBOARD"
+        .Font.Size = 16
+        .Font.Bold = True
+        .Interior.Color = RGB(0, 102, 204) ' Dark blue
+        .Font.Color = RGB(255, 255, 255) ' White
+    End With
+    ws.Range(ws.Cells(startRow, startCol), ws.Cells(startRow, startCol + 5)).Merge
+
+    startRow = startRow + 2
+
+    ' Calculate portfolio KPIs
+    Dim excellentCount As Integer, goodCount As Integer, acceptableCount As Integer, poorCount As Integer
+    Dim avgMAPE As Double, minMAPE As Double, maxMAPE As Double
+    Dim totalDemand As Double, avgDemand As Double
+    Dim highRiskCount As Integer, mediumRiskCount As Integer, lowRiskCount As Integer
+
+    excellentCount = 0: goodCount = 0: acceptableCount = 0: poorCount = 0
+    avgMAPE = 0: minMAPE = 9999: maxMAPE = 0
+    totalDemand = 0
+    highRiskCount = 0: mediumRiskCount = 0: lowRiskCount = 0
+
+    Dim i As Integer
+    For i = 1 To numComponents
+        ' Accuracy distribution
+        If summaries(i).BestMAPE < 10 Then
+            excellentCount = excellentCount + 1
+        ElseIf summaries(i).BestMAPE < 20 Then
+            goodCount = goodCount + 1
+        ElseIf summaries(i).BestMAPE < 30 Then
+            acceptableCount = acceptableCount + 1
+        Else
+            poorCount = poorCount + 1
+        End If
+
+        ' MAPE statistics
+        avgMAPE = avgMAPE + summaries(i).BestMAPE
+        If summaries(i).BestMAPE < minMAPE Then minMAPE = summaries(i).BestMAPE
+        If summaries(i).BestMAPE > maxMAPE Then maxMAPE = summaries(i).BestMAPE
+
+        ' Demand
+        totalDemand = totalDemand + summaries(i).AvgDemandPerPeriod
+
+        ' Risk classification
+        If summaries(i).BestMAPE > 30 Or summaries(i).DataQualityScore < 60 Then
+            highRiskCount = highRiskCount + 1
+        ElseIf summaries(i).BestMAPE > 20 Or summaries(i).DataQualityScore < 80 Then
+            mediumRiskCount = mediumRiskCount + 1
+        Else
+            lowRiskCount = lowRiskCount + 1
+        End If
+    Next i
+
+    avgMAPE = avgMAPE / numComponents
+    avgDemand = totalDemand / numComponents
+
+    ' KPI Section 1: Portfolio Overview
+    ws.Cells(startRow, startCol).Value = "PORTFOLIO OVERVIEW"
+    ws.Cells(startRow, startCol).Font.Bold = True
+    ws.Cells(startRow, startCol).Interior.Color = RGB(220, 230, 241)
+    startRow = startRow + 1
+
+    ws.Cells(startRow, startCol).Value = "Total Components:"
+    ws.Cells(startRow, startCol + 2).Value = numComponents
+    ws.Cells(startRow, startCol + 2).Font.Bold = True
+    ws.Cells(startRow, startCol + 2).Font.Size = 14
+    startRow = startRow + 1
+
+    ws.Cells(startRow, startCol).Value = "Total Demand (Avg/Period):"
+    ws.Cells(startRow, startCol + 2).Value = Round(totalDemand, 0)
+    ws.Cells(startRow, startCol + 2).NumberFormat = "#,##0"
+    ws.Cells(startRow, startCol + 2).Font.Bold = True
+    startRow = startRow + 1
+
+    ws.Cells(startRow, startCol).Value = "Average Demand/Component:"
+    ws.Cells(startRow, startCol + 2).Value = Round(avgDemand, 0)
+    ws.Cells(startRow, startCol + 2).NumberFormat = "#,##0"
+    startRow = startRow + 2
+
+    ' KPI Section 2: Forecast Accuracy
+    ws.Cells(startRow, startCol).Value = "FORECAST ACCURACY"
+    ws.Cells(startRow, startCol).Font.Bold = True
+    ws.Cells(startRow, startCol).Interior.Color = RGB(220, 230, 241)
+    startRow = startRow + 1
+
+    ws.Cells(startRow, startCol).Value = "Portfolio Avg MAPE:"
+    ws.Cells(startRow, startCol + 2).Value = Round(avgMAPE, 1) & "%"
+    ws.Cells(startRow, startCol + 2).Font.Bold = True
+    ws.Cells(startRow, startCol + 2).Font.Size = 14
+
+    ' Color code based on accuracy
+    If avgMAPE < 15 Then
+        ws.Cells(startRow, startCol + 2).Interior.Color = RGB(146, 208, 80) ' Green
+    ElseIf avgMAPE < 25 Then
+        ws.Cells(startRow, startCol + 2).Interior.Color = RGB(255, 217, 102) ' Yellow
+    Else
+        ws.Cells(startRow, startCol + 2).Interior.Color = RGB(255, 102, 102) ' Red
+    End If
+    startRow = startRow + 1
+
+    ws.Cells(startRow, startCol).Value = "Best Component MAPE:"
+    ws.Cells(startRow, startCol + 2).Value = Round(minMAPE, 1) & "%"
+    ws.Cells(startRow, startCol + 2).Interior.Color = RGB(146, 208, 80)
+    startRow = startRow + 1
+
+    ws.Cells(startRow, startCol).Value = "Worst Component MAPE:"
+    ws.Cells(startRow, startCol + 2).Value = Round(maxMAPE, 1) & "%"
+    ws.Cells(startRow, startCol + 2).Interior.Color = RGB(255, 102, 102)
+    startRow = startRow + 2
+
+    ' KPI Section 3: Quality Distribution
+    ws.Cells(startRow, startCol).Value = "QUALITY DISTRIBUTION"
+    ws.Cells(startRow, startCol).Font.Bold = True
+    ws.Cells(startRow, startCol).Interior.Color = RGB(220, 230, 241)
+    startRow = startRow + 1
+
+    ws.Cells(startRow, startCol).Value = "Excellent (<10% MAPE):"
+    ws.Cells(startRow, startCol + 2).Value = excellentCount & " (" & Round(excellentCount / numComponents * 100, 0) & "%)"
+    ws.Cells(startRow, startCol + 2).Interior.Color = RGB(146, 208, 80)
+    startRow = startRow + 1
+
+    ws.Cells(startRow, startCol).Value = "Good (10-20% MAPE):"
+    ws.Cells(startRow, startCol + 2).Value = goodCount & " (" & Round(goodCount / numComponents * 100, 0) & "%)"
+    ws.Cells(startRow, startCol + 2).Interior.Color = RGB(169, 208, 142)
+    startRow = startRow + 1
+
+    ws.Cells(startRow, startCol).Value = "Acceptable (20-30% MAPE):"
+    ws.Cells(startRow, startCol + 2).Value = acceptableCount & " (" & Round(acceptableCount / numComponents * 100, 0) & "%)"
+    ws.Cells(startRow, startCol + 2).Interior.Color = RGB(255, 217, 102)
+    startRow = startRow + 1
+
+    ws.Cells(startRow, startCol).Value = "Poor (>30% MAPE):"
+    ws.Cells(startRow, startCol + 2).Value = poorCount & " (" & Round(poorCount / numComponents * 100, 0) & "%)"
+    ws.Cells(startRow, startCol + 2).Interior.Color = RGB(255, 102, 102)
+    startRow = startRow + 2
+
+    ' KPI Section 4: Risk Assessment
+    ws.Cells(startRow, startCol).Value = "RISK ASSESSMENT"
+    ws.Cells(startRow, startCol).Font.Bold = True
+    ws.Cells(startRow, startCol).Interior.Color = RGB(220, 230, 241)
+    startRow = startRow + 1
+
+    ws.Cells(startRow, startCol).Value = "Low Risk Components:"
+    ws.Cells(startRow, startCol + 2).Value = lowRiskCount & " (" & Round(lowRiskCount / numComponents * 100, 0) & "%)"
+    ws.Cells(startRow, startCol + 2).Interior.Color = RGB(146, 208, 80)
+    ws.Cells(startRow, startCol + 2).Font.Bold = True
+    startRow = startRow + 1
+
+    ws.Cells(startRow, startCol).Value = "Medium Risk:"
+    ws.Cells(startRow, startCol + 2).Value = mediumRiskCount & " (" & Round(mediumRiskCount / numComponents * 100, 0) & "%)"
+    ws.Cells(startRow, startCol + 2).Interior.Color = RGB(255, 217, 102)
+    startRow = startRow + 1
+
+    ws.Cells(startRow, startCol).Value = "High Risk:"
+    ws.Cells(startRow, startCol + 2).Value = highRiskCount & " (" & Round(highRiskCount / numComponents * 100, 0) & "%)"
+    ws.Cells(startRow, startCol + 2).Interior.Color = RGB(255, 102, 102)
+    ws.Cells(startRow, startCol + 2).Font.Bold = True
+    startRow = startRow + 2
+
+    ' Add portfolio health indicator
+    ws.Cells(startRow, startCol).Value = "PORTFOLIO HEALTH:"
+    ws.Cells(startRow, startCol).Font.Bold = True
+    ws.Cells(startRow, startCol).Font.Size = 12
+
+    Dim healthScore As Double
+    healthScore = (excellentCount * 4 + goodCount * 3 + acceptableCount * 2 + poorCount * 1) / (numComponents * 4) * 100
+
+    Dim healthStatus As String
+    If healthScore >= 75 Then
+        healthStatus = "EXCELLENT"
+        ws.Cells(startRow, startCol + 2).Interior.Color = RGB(146, 208, 80)
+    ElseIf healthScore >= 60 Then
+        healthStatus = "GOOD"
+        ws.Cells(startRow, startCol + 2).Interior.Color = RGB(169, 208, 142)
+    ElseIf healthScore >= 45 Then
+        healthStatus = "FAIR"
+        ws.Cells(startRow, startCol + 2).Interior.Color = RGB(255, 217, 102)
+    Else
+        healthStatus = "NEEDS ATTENTION"
+        ws.Cells(startRow, startCol + 2).Interior.Color = RGB(255, 102, 102)
+    End If
+
+    ws.Cells(startRow, startCol + 2).Value = healthStatus & " (" & Round(healthScore, 0) & "/100)"
+    ws.Cells(startRow, startCol + 2).Font.Bold = True
+    ws.Cells(startRow, startCol + 2).Font.Size = 14
+    ws.Cells(startRow, startCol + 2).Font.Color = RGB(0, 0, 0)
+
+    ' Format all cells
+    ws.Range(ws.Cells(2, startCol), ws.Cells(startRow, startCol + 5)).Borders.LineStyle = xlContinuous
+    ws.Columns(startCol).ColumnWidth = 22
+    ws.Columns(startCol + 2).ColumnWidth = 20
+
+    ' Create visual accuracy distribution chart
+    Call CreateAccuracyPieChart(ws, excellentCount, goodCount, acceptableCount, poorCount, startCol, startRow + 2)
+
+    ' Create risk heatmap
+    Call CreateRiskHeatmap(ws, summaries, numComponents, startCol + 8, 2)
+
+End Sub
+
+Private Sub CreateAccuracyPieChart(ws As Worksheet, excellent As Integer, good As Integer, acceptable As Integer, poor As Integer, startCol As Long, startRow As Long)
+    ' Create pie chart showing accuracy distribution
+
+    Dim chartRow As Long
+    chartRow = startRow
+
+    ' Write data for chart
+    ws.Cells(chartRow, startCol).Value = "Category"
+    ws.Cells(chartRow, startCol + 1).Value = "Count"
+    ws.Cells(chartRow + 1, startCol).Value = "Excellent"
+    ws.Cells(chartRow + 1, startCol + 1).Value = excellent
+    ws.Cells(chartRow + 2, startCol).Value = "Good"
+    ws.Cells(chartRow + 2, startCol + 1).Value = good
+    ws.Cells(chartRow + 3, startCol).Value = "Acceptable"
+    ws.Cells(chartRow + 3, startCol + 1).Value = acceptable
+    ws.Cells(chartRow + 4, startCol).Value = "Poor"
+    ws.Cells(chartRow + 4, startCol + 1).Value = poor
+
+    ' Create pie chart
+    Dim chartObj As ChartObject
+    Set chartObj = ws.ChartObjects.Add(Left:=ws.Cells(chartRow + 6, startCol).Left, _
+                                      Top:=ws.Cells(chartRow + 6, startCol).Top, _
+                                      Width:=350, Height:=250)
+
+    With chartObj.Chart
+        .ChartType = xlPie
+        .SetSourceData ws.Range(ws.Cells(chartRow, startCol), ws.Cells(chartRow + 4, startCol + 1))
+        .HasTitle = True
+        .ChartTitle.Text = "Forecast Accuracy Distribution"
+        .ChartTitle.Font.Size = 12
+        .ChartTitle.Font.Bold = True
+
+        ' Color code slices
+        .SeriesCollection(1).Points(1).Interior.Color = RGB(146, 208, 80) ' Excellent - Green
+        .SeriesCollection(1).Points(2).Interior.Color = RGB(169, 208, 142) ' Good - Light green
+        .SeriesCollection(1).Points(3).Interior.Color = RGB(255, 217, 102) ' Acceptable - Yellow
+        .SeriesCollection(1).Points(4).Interior.Color = RGB(255, 102, 102) ' Poor - Red
+
+        .HasLegend = True
+        .Legend.Position = xlLegendPositionBottom
+        .ApplyDataLabels xlDataLabelsShowPercent
+    End With
+End Sub
+
+Private Sub CreateRiskHeatmap(ws As Worksheet, summaries() As ComponentSummary, numComponents As Integer, startCol As Long, startRow As Long)
+    ' Create risk heatmap matrix (MAPE vs Data Quality)
+
+    Dim row As Long, col As Long
+    row = startRow
+
+    ' Title
+    ws.Cells(row, startCol).Value = "RISK HEATMAP (MAPE vs Data Quality)"
+    ws.Cells(row, startCol).Font.Bold = True
+    ws.Cells(row, startCol).Font.Size = 12
+    ws.Range(ws.Cells(row, startCol), ws.Cells(row, startCol + 4)).Merge
+    row = row + 2
+
+    ' Headers
+    ws.Cells(row, startCol + 1).Value = "High Quality"
+    ws.Cells(row, startCol + 2).Value = "Medium Quality"
+    ws.Cells(row, startCol + 3).Value = "Low Quality"
+
+    ws.Cells(row + 1, startCol).Value = "Low MAPE"
+    ws.Cells(row + 2, startCol).Value = "Medium MAPE"
+    ws.Cells(row + 3, startCol).Value = "High MAPE"
+
+    ' Count components in each cell
+    Dim heatmap(1 To 3, 1 To 3) As Integer
+    Dim i As Integer, mapeClass As Integer, qualityClass As Integer
+
+    For i = 1 To numComponents
+        ' Classify MAPE
+        If summaries(i).BestMAPE < 15 Then
+            mapeClass = 1 ' Low
+        ElseIf summaries(i).BestMAPE < 30 Then
+            mapeClass = 2 ' Medium
+        Else
+            mapeClass = 3 ' High
+        End If
+
+        ' Classify Quality
+        If summaries(i).DataQualityScore >= 80 Then
+            qualityClass = 1 ' High
+        ElseIf summaries(i).DataQualityScore >= 60 Then
+            qualityClass = 2 ' Medium
+        Else
+            qualityClass = 3 ' Low
+        End If
+
+        heatmap(mapeClass, qualityClass) = heatmap(mapeClass, qualityClass) + 1
+    Next i
+
+    ' Fill heatmap with counts and colors
+    For i = 1 To 3
+        For col = 1 To 3
+            ws.Cells(row + i, startCol + col).Value = heatmap(i, col)
+            ws.Cells(row + i, startCol + col).HorizontalAlignment = xlCenter
+
+            ' Color code by risk level
+            Dim riskScore As Integer
+            riskScore = i + col ' Sum indicates risk (2=low, 6=high)
+
+            If riskScore <= 2 Then
+                ws.Cells(row + i, startCol + col).Interior.Color = RGB(146, 208, 80) ' Green - Low risk
+            ElseIf riskScore = 3 Then
+                ws.Cells(row + i, startCol + col).Interior.Color = RGB(169, 208, 142) ' Light green
+            ElseIf riskScore = 4 Then
+                ws.Cells(row + i, startCol + col).Interior.Color = RGB(255, 217, 102) ' Yellow - Medium risk
+            ElseIf riskScore = 5 Then
+                ws.Cells(row + i, startCol + col).Interior.Color = RGB(255, 153, 102) ' Orange
+            Else
+                ws.Cells(row + i, startCol + col).Interior.Color = RGB(255, 102, 102) ' Red - High risk
+            End If
+
+            ws.Cells(row + i, startCol + col).Font.Bold = True
+        Next col
+    Next i
+
+    ' Format
+    ws.Range(ws.Cells(row, startCol), ws.Cells(row + 3, startCol + 3)).Borders.LineStyle = xlContinuous
+    ws.Columns(startCol).ColumnWidth = 14
+    For col = startCol + 1 To startCol + 3
+        ws.Columns(col).ColumnWidth = 14
+    Next col
+End Sub
+
