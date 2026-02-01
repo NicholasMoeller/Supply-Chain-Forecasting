@@ -639,23 +639,33 @@ Private Sub CreateHistogramChart(ByRef ws As Worksheet, _
     maxVal = sorted(n)
     numBins = Int(Sqr(n))
     If numBins < 5 Then numBins = 5
-    binWidth = (maxVal - minVal) / numBins
 
     ReDim bins(1 To numBins)
     ReDim binCenters(1 To numBins)
 
-    For i = 1 To numBins
-        binCenters(i) = minVal + (i - 0.5) * binWidth
-    Next i
+    If maxVal = minVal Then
+        ' All residuals are identical (e.g. perfect fit) - single bin at that value
+        numBins = 1
+        ReDim bins(1 To 1)
+        ReDim binCenters(1 To 1)
+        binCenters(1) = minVal
+        bins(1) = n
+    Else
+        binWidth = (maxVal - minVal) / numBins
 
-    ' Count frequencies
-    For i = 1 To n
-        Dim binIndex As Integer
-        binIndex = Int((sorted(i) - minVal) / binWidth) + 1
-        If binIndex > numBins Then binIndex = numBins
-        If binIndex < 1 Then binIndex = 1
-        bins(binIndex) = bins(binIndex) + 1
-    Next i
+        For i = 1 To numBins
+            binCenters(i) = minVal + (i - 0.5) * binWidth
+        Next i
+
+        ' Count frequencies
+        For i = 1 To n
+            Dim binIndex As Integer
+            binIndex = Int((sorted(i) - minVal) / binWidth) + 1
+            If binIndex > numBins Then binIndex = numBins
+            If binIndex < 1 Then binIndex = 1
+            bins(binIndex) = bins(binIndex) + 1
+        Next i
+    End If
 
     ' Create chart
     Set chartObj = ws.ChartObjects.Add(left, top, Width, Height)

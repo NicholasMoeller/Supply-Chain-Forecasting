@@ -1891,6 +1891,8 @@ Private Sub GenerateBatchSummaryStats(ws As Worksheet)
     ws.Cells(startRow, startCol).Font.Color = RGB(255, 255, 255)
     ws.Range(ws.Cells(startRow, startCol), ws.Cells(startRow, startCol + 1)).Merge
 
+    If ComponentCount = 0 Then Exit Sub
+
     ' Initialize counters
     avgMAPE = 0
     avgQuality = 0
@@ -3528,6 +3530,8 @@ Public Sub CreateExecutiveDashboard(ws As Worksheet, summaries() As ComponentSum
     Dim avgMAPE As Double, minMAPE As Double, maxMAPE As Double
     Dim totalDemand As Double, avgDemand As Double
     Dim highRiskCount As Integer, mediumRiskCount As Integer, lowRiskCount As Integer
+
+    If numComponents = 0 Then Exit Sub
 
     excellentCount = 0: goodCount = 0: acceptableCount = 0: poorCount = 0
     avgMAPE = 0: minMAPE = 9999: maxMAPE = 0
