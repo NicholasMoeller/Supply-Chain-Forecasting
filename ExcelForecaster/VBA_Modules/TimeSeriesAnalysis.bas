@@ -693,7 +693,11 @@ Public Function CalculateACF(ByRef Values() As Double, ByVal maxLag As Integer) 
         For i = LBound(Values) To UBound(Values) - lag
             covariance = covariance + (Values(i) - mean) * (Values(i + lag) - mean)
         Next i
-        acf(lag) = covariance / variance
+        If variance > 0 Then
+            acf(lag) = covariance / variance
+        Else
+            acf(lag) = 0  ' Constant series: autocorrelation undefined, return 0
+        End If
     Next lag
 
     CalculateACF = acf
