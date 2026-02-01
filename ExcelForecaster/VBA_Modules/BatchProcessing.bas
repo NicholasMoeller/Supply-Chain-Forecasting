@@ -274,11 +274,14 @@ Public Sub ProcessAllComponents(frequency As Long, horizon As Long, seasonalType
     ' Calculate portfolio-level metrics and create portfolio forecast chart
     Call GeneratePortfolioAnalysis(frequency, seasonalType)
 
-    ' Generate component correlation analysis
-    Call GenerateCorrelationAnalysis(ws)
+    ' Generate component correlation analysis and batch statistics on BatchSummary
+    Dim summaryWs As Worksheet
+    Set summaryWs = ThisWorkbook.Worksheets("BatchSummary")
+    Call GenerateCorrelationAnalysis(summaryWs)
+    Call GenerateBatchSummaryStats(summaryWs)
 
-    ' Generate batch-level summary statistics
-    Call GenerateBatchSummaryStats(ws)
+    ' Auto-fit all data columns now that rows are populated
+    summaryWs.Columns("A:BI").AutoFit
 
     ' Create detailed diagnostics for worst/best components if requested
     If fullDiagnostics Then
@@ -1384,41 +1387,45 @@ Private Sub AddSummaryStatistics(ws As Worksheet)
         avgMAPE = avgMAPE / validCount
     End If
 
-    ' Write statistics
-    ws.Cells(20, 22).Value = "SUMMARY STATISTICS"
-    ws.Cells(20, 22).Font.Bold = True
-    ws.Cells(20, 22).Font.Size = 14
+    ' Write statistics below component data table (col V, between BatchSummaryStats at col 1 and Correlation at col 30)
+    Dim startRow As Long
+    Dim startCol As Long
+    startRow = ComponentCount + 5
+    startCol = 22  ' Column V
 
-    ws.Cells(22, 22).Value = "Total Components:"
-    ws.Cells(22, 23).Value = ComponentCount
+    ws.Cells(startRow, startCol).Value = "SUMMARY STATISTICS"
+    ws.Cells(startRow, startCol).Font.Bold = True
+    ws.Cells(startRow, startCol).Font.Size = 14
 
-    ws.Cells(23, 22).Value = "Valid Components:"
-    ws.Cells(23, 23).Value = validCount
+    ws.Cells(startRow + 2, startCol).Value = "Total Components:"
+    ws.Cells(startRow + 2, startCol + 1).Value = ComponentCount
 
-    ws.Cells(24, 22).Value = "Failed Components:"
-    ws.Cells(24, 23).Value = errorCount
+    ws.Cells(startRow + 3, startCol).Value = "Valid Components:"
+    ws.Cells(startRow + 3, startCol + 1).Value = validCount
 
-    ws.Cells(26, 22).Value = "Average MAPE:"
-    ws.Cells(26, 23).Value = Format(avgMAPE, "0.00") & "%"
+    ws.Cells(startRow + 4, startCol).Value = "Failed Components:"
+    ws.Cells(startRow + 4, startCol + 1).Value = errorCount
 
-    ws.Cells(27, 22).Value = "Best MAPE:"
-    ws.Cells(27, 23).Value = Format(minMAPE, "0.00") & "%"
+    ws.Cells(startRow + 6, startCol).Value = "Average MAPE:"
+    ws.Cells(startRow + 6, startCol + 1).Value = Format(avgMAPE, "0.00") & "%"
 
-    ws.Cells(28, 22).Value = "Worst MAPE:"
-    ws.Cells(28, 23).Value = Format(maxMAPE, "0.00") & "%"
+    ws.Cells(startRow + 7, startCol).Value = "Best MAPE:"
+    ws.Cells(startRow + 7, startCol + 1).Value = Format(minMAPE, "0.00") & "%"
 
-    ws.Cells(30, 22).Value = "Class A Components:"
-    ws.Cells(30, 23).Value = aCount
+    ws.Cells(startRow + 8, startCol).Value = "Worst MAPE:"
+    ws.Cells(startRow + 8, startCol + 1).Value = Format(maxMAPE, "0.00") & "%"
 
-    ws.Cells(31, 22).Value = "Class B Components:"
-    ws.Cells(31, 23).Value = bCount
+    ws.Cells(startRow + 10, startCol).Value = "Class A Components:"
+    ws.Cells(startRow + 10, startCol + 1).Value = aCount
 
-    ws.Cells(32, 22).Value = "Class C Components:"
-    ws.Cells(32, 23).Value = cCount
+    ws.Cells(startRow + 11, startCol).Value = "Class B Components:"
+    ws.Cells(startRow + 11, startCol + 1).Value = bCount
 
-    ' Format
-    ws.Range("V22:V32").Font.Bold = True
-    ws.Range("W22:W32").NumberFormat = "0.00"
+    ws.Cells(startRow + 12, startCol).Value = "Class C Components:"
+    ws.Cells(startRow + 12, startCol + 1).Value = cCount
+
+    ' Format labels bold
+    ws.Range(ws.Cells(startRow + 2, startCol), ws.Cells(startRow + 12, startCol)).Font.Bold = True
 End Sub
 
 ' ============================================================================
@@ -1680,9 +1687,9 @@ Private Sub GenerateCorrelationAnalysis(ws As Worksheet)
     Set dataWs = ThisWorkbook.Worksheets("MultiComponentData")
     lastRow = dataWs.Cells(dataWs.Rows.Count, 1).End(xlUp).Row
 
-    ' Position for correlation matrix (below portfolio metrics)
-    startRow = 12
-    startCol = 28 ' Column AB
+    ' Position below component data table (avoids overlap with 61-column data area)
+    startRow = ComponentCount + 5
+    startCol = 30
 
     ' Header
     ws.Cells(startRow, startCol).Value = "CORRELATION ANALYSIS"
@@ -1872,9 +1879,9 @@ Private Sub GenerateBatchSummaryStats(ws As Worksheet)
     Dim patternCounts(1 To 7) As Long
     Dim patternNames(1 To 7) As String
 
-    ' Position (top left area)
-    startRow = 2
-    startCol = 38 ' Column AL
+    ' Position below component data table, left side (correlation analysis is at col 30+)
+    startRow = ComponentCount + 5
+    startCol = 1
 
     ' Header
     ws.Cells(startRow, startCol).Value = "BATCH SUMMARY STATISTICS"
