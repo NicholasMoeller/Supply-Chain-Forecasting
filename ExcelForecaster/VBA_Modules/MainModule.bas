@@ -76,17 +76,17 @@ Private Sub CreateDashboard(ByRef ws As Worksheet)
 
     ws.Cells(row, 2).value = "This tool provides professional forecasting capabilities including:"
     row = row + 1
-    ws.Cells(row, 3).value = "• Simple Exponential Smoothing (SES)"
+    ws.Cells(row, 3).value = "- Simple Exponential Smoothing (SES)"
     row = row + 1
-    ws.Cells(row, 3).value = "• Holt-Winters Seasonal Forecasting"
+    ws.Cells(row, 3).value = "- Holt-Winters Seasonal Forecasting"
     row = row + 1
-    ws.Cells(row, 3).value = "• Time Series Decomposition"
+    ws.Cells(row, 3).value = "- Time Series Decomposition"
     row = row + 1
-    ws.Cells(row, 3).value = "• Comprehensive Diagnostic Tools"
+    ws.Cells(row, 3).value = "- Comprehensive Diagnostic Tools"
     row = row + 1
-    ws.Cells(row, 3).value = "• Accuracy Metrics (MAPE, MAE, RMSE, MBE)"
+    ws.Cells(row, 3).value = "- Accuracy Metrics (MAPE, MAE, RMSE, MBE)"
     row = row + 1
-    ws.Cells(row, 3).value = "• Professional Charts and Visualizations"
+    ws.Cells(row, 3).value = "- Professional Charts and Visualizations"
     row = row + 2
 
     ' Getting Started
@@ -100,9 +100,9 @@ Private Sub CreateDashboard(ByRef ws As Worksheet)
 
     ws.Cells(row, 3).value = "1. Click a button below to launch the tool"
     row = row + 1
-    ws.Cells(row, 3).value = "   • Single Component - Analyze one time series"
+    ws.Cells(row, 3).value = "   - Single Component - Analyze one time series"
     row = row + 1
-    ws.Cells(row, 3).value = "   • Batch Processing - Analyze 50+ components at once"
+    ws.Cells(row, 3).value = "   - Batch Processing - Analyze 50+ components at once"
     row = row + 1
     ws.Cells(row, 3).value = "2. Select your CSV data file"
     row = row + 1
@@ -149,15 +149,15 @@ Private Sub CreateDashboard(ByRef ws As Worksheet)
     End With
     row = row + 1
 
-    ws.Cells(row, 3).value = "✓ CSV file format"
+    ws.Cells(row, 3).value = "[OK] CSV file format"
     row = row + 1
-    ws.Cells(row, 3).value = "✓ Minimum 24 data points (2 full seasonal cycles)"
+    ws.Cells(row, 3).value = "[OK] Minimum 24 data points (2 full seasonal cycles)"
     row = row + 1
-    ws.Cells(row, 3).value = "✓ Numeric values only"
+    ws.Cells(row, 3).value = "[OK] Numeric values only"
     row = row + 1
-    ws.Cells(row, 3).value = "✓ No missing values"
+    ws.Cells(row, 3).value = "[OK] No missing values"
     row = row + 1
-    ws.Cells(row, 3).value = "✓ Data in chronological order"
+    ws.Cells(row, 3).value = "[OK] Data in chronological order"
     row = row + 2
 
     ' Tips
@@ -169,13 +169,13 @@ Private Sub CreateDashboard(ByRef ws As Worksheet)
     End With
     row = row + 1
 
-    ws.Cells(row, 3).value = "• Use frequency 12 for monthly data, 4 for quarterly"
+    ws.Cells(row, 3).value = "- Use frequency 12 for monthly data, 4 for quarterly"
     row = row + 1
-    ws.Cells(row, 3).value = "• Holt-Winters works best with seasonal patterns"
+    ws.Cells(row, 3).value = "- Holt-Winters works best with seasonal patterns"
     row = row + 1
-    ws.Cells(row, 3).value = "• Check residual plots to validate model fit"
+    ws.Cells(row, 3).value = "- Check residual plots to validate model fit"
     row = row + 1
-    ws.Cells(row, 3).value = "• MAPE < 10% indicates excellent forecast accuracy"
+    ws.Cells(row, 3).value = "- MAPE < 10% indicates excellent forecast accuracy"
     row = row + 2
 
     ' Footer

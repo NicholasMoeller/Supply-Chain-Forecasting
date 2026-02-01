@@ -16,9 +16,9 @@ Public Sub CreateCompleteApplication()
     ' Welcome message
     response = MsgBox("This will automatically create the Time Series Forecasting Tool!" & vbCrLf & vbCrLf & _
                      "This includes:" & vbCrLf & _
-                     "• ForecastGUI UserForm with all controls" & vbCrLf & _
-                     "• Dashboard worksheet" & vbCrLf & _
-                     "• All necessary setup" & vbCrLf & vbCrLf & _
+                     "- ForecastGUI UserForm with all controls" & vbCrLf & _
+                     "- Dashboard worksheet" & vbCrLf & _
+                     "- All necessary setup" & vbCrLf & vbCrLf & _
                      "This will take about 10 seconds. Continue?", _
                      vbQuestion + vbYesNo, "Automated Setup")
 
@@ -43,11 +43,11 @@ Public Sub CreateCompleteApplication()
     Application.DisplayAlerts = True
 
     ' Success message
-    MsgBox "✓ Setup Complete!" & vbCrLf & vbCrLf & _
+    MsgBox "[OK] Setup Complete!" & vbCrLf & vbCrLf & _
            "Your Time Series Forecasting Tool is ready!" & vbCrLf & vbCrLf & _
            "TWO GUIs Created:" & vbCrLf & _
-           "• ForecastGUI - Single component analysis" & vbCrLf & _
-           "• BatchForecastGUI - Multi-component batch processing" & vbCrLf & vbCrLf & _
+           "- ForecastGUI - Single component analysis" & vbCrLf & _
+           "- BatchForecastGUI - Multi-component batch processing" & vbCrLf & vbCrLf & _
            "Next steps:" & vbCrLf & _
            "1. Save this workbook as .xlsm" & vbCrLf & _
            "2. Launch GUIs:" & vbCrLf & _
@@ -651,7 +651,7 @@ Public Sub VerifySetup()
 
     ' Check modules
     On Error Resume Next
-    msg = msg & "✓ TimeSeriesAnalysis: "
+    msg = msg & "[OK] TimeSeriesAnalysis: "
     If Err.Number = 0 Then msg = msg & "OK" Else msg = msg & "MISSING"
     msg = msg & vbCrLf
 

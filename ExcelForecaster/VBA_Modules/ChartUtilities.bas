@@ -398,9 +398,9 @@ Private Sub CreateLjungBoxDisplay(ByRef ws As Worksheet, _
     displayText = displayText & ljungBoxResult(3) & vbCrLf & vbCrLf
 
     If ljungBoxResult(2) > 0.05 Then
-        displayText = displayText & "✓ Model is adequate"
+        displayText = displayText & "[OK] Model is adequate"
     Else
-        displayText = displayText & "✗ Model needs improvement"
+        displayText = displayText & "[!] Model needs improvement"
     End If
 
     ' Create text box shape
@@ -484,7 +484,7 @@ Private Sub CreateResidualsChart(ByRef ws As Worksheet, _
 
     ' Add interpretation guide
     Call AddChartInterpretation(ws, _
-        "✓ Should fluctuate randomly around zero. ✗ Patterns/trends = model missing something.", _
+        "[OK] Should fluctuate randomly around zero. [!] Patterns/trends = model missing something.", _
         left, top + Height + 2, Width)
 
 End Sub
@@ -538,7 +538,7 @@ Private Sub CreateACFChart(ByRef ws As Worksheet, _
 
     ' Add interpretation guide
     Call AddChartInterpretation(ws, _
-        "✓ All bars should be small (~near zero). ✗ Tall bars = residuals correlated with past values.", _
+        "[OK] All bars should be small (~near zero). [!] Tall bars = residuals correlated with past values.", _
         left, top + Height + 2, Width)
 
 End Sub
@@ -592,7 +592,7 @@ Private Sub CreatePACFChart(ByRef ws As Worksheet, _
 
     ' Add interpretation guide
     Call AddChartInterpretation(ws, _
-        "✓ Bars should be small. ✗ Tall bars = direct influence from that lag (ACF can be misleading).", _
+        "[OK] Bars should be small. [!] Tall bars = direct influence from that lag (ACF can be misleading).", _
         left, top + Height + 2, Width)
 
 End Sub
@@ -685,7 +685,7 @@ Private Sub CreateHistogramChart(ByRef ws As Worksheet, _
 
     ' Add interpretation guide
     Call AddChartInterpretation(ws, _
-        "✓ Should look bell-shaped (normal distribution). ✗ Skewed/multiple peaks = non-normal errors.", _
+        "[OK] Should look bell-shaped (normal distribution). [!] Skewed/multiple peaks = non-normal errors.", _
         left, top + Height + 2, Width)
 
 End Sub
@@ -777,7 +777,7 @@ Private Sub CreateQQPlotChart(ByRef ws As Worksheet, _
 
     ' Add interpretation guide
     Call AddChartInterpretation(ws, _
-        "✓ Points should follow red diagonal line. ✗ S-curves or deviations = non-normal residuals.", _
+        "[OK] Points should follow red diagonal line. [!] S-curves or deviations = non-normal residuals.", _
         left, top + Height + 2, Width)
 
 End Sub

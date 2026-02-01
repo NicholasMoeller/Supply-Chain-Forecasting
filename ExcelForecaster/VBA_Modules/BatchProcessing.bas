@@ -39,7 +39,7 @@ Public Type ComponentSummary
     ABCClass As String ' "A", "B", "C" based on forecast difficulty
 
     ' NEW: Quality Warnings & Benchmarks
-    QualityFlag As String ' "🟢 GOOD", "🟡 WARNING", "🔴 CRITICAL"
+    QualityFlag As String ' "GOOD", "WARNING", "CRITICAL"
     WarningMessage As String ' Specific issues identified
     NaiveMAPE As Double ' Naive forecast benchmark
     SeasonalNaiveMAPE As Double ' Seasonal naive benchmark
@@ -50,7 +50,7 @@ Public Type ComponentSummary
     ' NEW: Historical Backtesting
     BacktestMAPE As Double ' Average MAPE from historical backtests
     BacktestCount As Integer ' Number of backtest origins tested
-    BacktestReliability As String ' "✓ Consistent", "~ Variable", "✗ Unstable"
+    BacktestReliability As String ' "Consistent", "~ Variable", "Unstable"
 
     ' NEW: Data Quality Metrics
     DataQualityScore As Double ' 0-100 quality score
@@ -455,31 +455,31 @@ Private Sub ProcessSingleComponent(componentName As String, data() As Double, _
 
     ' Critical quality issues
     If summary.BestMAPE > 50 Then
-        summary.QualityFlag = "🔴 CRITICAL"
+        summary.QualityFlag = "CRITICAL"
         warnings = "MAPE > 50% - Manual review needed"
     ElseIf summary.BestMAPE > 20 Then
-        summary.QualityFlag = "🟡 WARNING"
+        summary.QualityFlag = "WARNING"
         warnings = "MAPE 20-50% - Check for outliers/shifts"
     Else
-        summary.QualityFlag = "🟢 GOOD"
+        summary.QualityFlag = "GOOD"
         warnings = "Forecast reliable"
     End If
 
     ' Check if forecast is worse than naive
     If summary.ForecastValueAdd < 0 Then
-        summary.QualityFlag = "🟡 WARNING"
+        summary.QualityFlag = "WARNING"
         warnings = warnings & "; Worse than naive forecast"
     End If
 
     ' Check for bias
     If absB > summary.SES_MAE * 0.5 Then
-        If summary.QualityFlag = "🟢 GOOD" Then summary.QualityFlag = "🟡 WARNING"
+        If summary.QualityFlag = "GOOD" Then summary.QualityFlag = "WARNING"
         warnings = warnings & "; High bias (" & summary.BiasDirection & ")"
     End If
 
     ' Check for insufficient data
     If validPoints < frequency * 3 Then
-        If summary.QualityFlag = "🟢 GOOD" Then summary.QualityFlag = "🟡 WARNING"
+        If summary.QualityFlag = "GOOD" Then summary.QualityFlag = "WARNING"
         warnings = warnings & "; Limited data"
     End If
 
@@ -681,11 +681,11 @@ Private Sub WriteSummaryRow(rowIndex As Long, summary As ComponentSummary)
         ws.Cells(row, 30).Value = summary.BacktestReliability
 
         ' Color code reliability
-        If summary.BacktestReliability = "✓ Consistent" Then
+        If summary.BacktestReliability = "Consistent" Then
             ws.Cells(row, 30).Interior.Color = RGB(146, 208, 80) ' Green
         ElseIf summary.BacktestReliability = "~ Variable" Then
             ws.Cells(row, 30).Interior.Color = RGB(255, 217, 102) ' Yellow
-        ElseIf summary.BacktestReliability = "✗ Unstable" Then
+        ElseIf summary.BacktestReliability = "Unstable" Then
             ws.Cells(row, 30).Interior.Color = RGB(255, 192, 203) ' Pink
         End If
     Else
@@ -732,13 +732,13 @@ Private Sub WriteSummaryRow(rowIndex As Long, summary As ComponentSummary)
     ' Color code trend direction
     If summary.TrendDirection = "Upward" Then
         ws.Cells(row, 36).Interior.Color = RGB(200, 255, 200) ' Light green
-        ws.Cells(row, 36).Value = "↑ " & summary.TrendDirection
+        ws.Cells(row, 36).Value = "^ " & summary.TrendDirection
     ElseIf summary.TrendDirection = "Downward" Then
         ws.Cells(row, 36).Interior.Color = RGB(255, 200, 200) ' Light red
-        ws.Cells(row, 36).Value = "↓ " & summary.TrendDirection
+        ws.Cells(row, 36).Value = "v " & summary.TrendDirection
     Else
         ws.Cells(row, 36).Interior.Color = RGB(242, 242, 242) ' Gray
-        ws.Cells(row, 36).Value = "→ " & summary.TrendDirection
+        ws.Cells(row, 36).Value = "-> " & summary.TrendDirection
     End If
 
     ' NEW: Safety Stock & Inventory Recommendations
@@ -813,13 +813,13 @@ Private Sub WriteSummaryRow(rowIndex As Long, summary As ComponentSummary)
     Select Case summary.RecentTrendChange
         Case "Accelerating"
             ws.Cells(row, 53).Interior.Color = RGB(200, 255, 200) ' Light green
-            ws.Cells(row, 53).Value = "↑↑ Accelerating"
+            ws.Cells(row, 53).Value = "^^ Accelerating"
         Case "Decelerating"
             ws.Cells(row, 53).Interior.Color = RGB(255, 200, 200) ' Light red
-            ws.Cells(row, 53).Value = "↓↓ Decelerating"
+            ws.Cells(row, 53).Value = "vv Decelerating"
         Case "Stable"
             ws.Cells(row, 53).Interior.Color = RGB(242, 242, 242) ' Gray
-            ws.Cells(row, 53).Value = "→ Stable"
+            ws.Cells(row, 53).Value = "-> Stable"
     End Select
 
     ' Highlight significant demand sensing adjustments
@@ -866,11 +866,11 @@ Private Sub WriteSummaryRow(rowIndex As Long, summary As ComponentSummary)
     End Select
 
     ' Color code quality flag
-    If summary.QualityFlag = "🟢 GOOD" Then
+    If summary.QualityFlag = "GOOD" Then
         ws.Cells(row, 21).Interior.Color = RGB(146, 208, 80) ' Green
-    ElseIf summary.QualityFlag = "🟡 WARNING" Then
+    ElseIf summary.QualityFlag = "WARNING" Then
         ws.Cells(row, 21).Interior.Color = RGB(255, 217, 102) ' Yellow
-    ElseIf summary.QualityFlag = "🔴 CRITICAL" Then
+    ElseIf summary.QualityFlag = "CRITICAL" Then
         ws.Cells(row, 21).Interior.Color = RGB(255, 0, 0) ' Red
         ws.Cells(row, 21).Font.Color = RGB(255, 255, 255)
     End If
@@ -1723,7 +1723,7 @@ Private Sub GenerateCorrelationAnalysis(ws As Worksheet)
 
     If maxCorr > 0.8 Then
         ws.Cells(startRow + 2, startCol + 1).Interior.Color = RGB(255, 217, 102) ' Strong correlation
-        ws.Cells(startRow + 3, startCol).Value = "→ Consider grouping highly correlated components"
+        ws.Cells(startRow + 3, startCol).Value = "-> Consider grouping highly correlated components"
     End If
 
     ws.Cells(startRow + 4, startCol).Value = "Lowest Correlation:"
@@ -1732,7 +1732,7 @@ Private Sub GenerateCorrelationAnalysis(ws As Worksheet)
 
     If minCorr < -0.5 Then
         ws.Cells(startRow + 4, startCol + 1).Interior.Color = RGB(255, 192, 203) ' Negative correlation
-        ws.Cells(startRow + 5, startCol).Value = "→ Negative correlation provides natural hedging"
+        ws.Cells(startRow + 5, startCol).Value = "-> Negative correlation provides natural hedging"
     End If
 
     ' Write correlation matrix (only if not too many components)
@@ -2402,11 +2402,11 @@ Private Sub PerformBacktest(ByRef data() As Double, _
 
         ' Classify reliability
         If cv < 0.2 Then
-            reliability = "✓ Consistent" ' Low variation, highly reliable
+            reliability = "Consistent" ' Low variation, highly reliable
         ElseIf cv < 0.5 Then
             reliability = "~ Variable" ' Moderate variation
         Else
-            reliability = "✗ Unstable" ' High variation, unreliable
+            reliability = "Unstable" ' High variation, unreliable
         End If
     Else
         backtestMAPE = 0
@@ -2828,9 +2828,9 @@ Private Sub CalculateSafetyStockRecommendations(ByRef data() As Double, _
     End If
 
     ' Map CV to stockout risk
-    ' Low CV (< 20%) → Low risk (< 10%)
-    ' Medium CV (20-50%) → Medium risk (10-25%)
-    ' High CV (> 50%) → High risk (> 25%)
+    ' Low CV (< 20%) -> Low risk (< 10%)
+    ' Medium CV (20-50%) -> Medium risk (10-25%)
+    ' High CV (> 50%) -> High risk (> 25%)
     If cv < 20 Then
         stockoutRisk = 5 + cv * 0.25
     ElseIf cv < 50 Then
@@ -2985,7 +2985,7 @@ Private Function DetermineModelConfidence(ByRef summary As ComponentSummary) As 
     End If
 
     ' Penalize for unstable backtests
-    If summary.BacktestReliability = "✗ Unstable" Then
+    If summary.BacktestReliability = "Unstable" Then
         confidenceScore = confidenceScore - 20
     ElseIf summary.BacktestReliability = "~ Variable" Then
         confidenceScore = confidenceScore - 10
@@ -3940,16 +3940,16 @@ Public Sub AddTrafficLights(ws As Worksheet, summaries() As ComponentSummary, nu
 
         ' Determine status based on MAPE and quality
         If summaries(i).BestMAPE < 10 And summaries(i).DataQualityScore >= 80 Then
-            status = "●" ' Green circle
+            status = "O" ' Green circle
             color = RGB(146, 208, 80)
         ElseIf summaries(i).BestMAPE < 20 And summaries(i).DataQualityScore >= 60 Then
-            status = "●" ' Yellow circle
+            status = "O" ' Yellow circle
             color = RGB(255, 217, 102)
         ElseIf summaries(i).BestMAPE < 30 Then
-            status = "●" ' Orange circle
+            status = "O" ' Orange circle
             color = RGB(255, 153, 0)
         Else
-            status = "●" ' Red circle
+            status = "O" ' Red circle
             color = RGB(255, 0, 0)
         End If
 
@@ -3996,13 +3996,13 @@ Public Sub AddSparklines(ws As Worksheet, summaries() As ComponentSummary, numCo
 
         ' Use BestMAPE as proxy for trend quality
         If summaries(i).BestMAPE < 15 Then
-            trendIndicator = "▲" ' Upward trend (good)
+            trendIndicator = "^" ' Upward trend (good)
             sparkRange.Font.Color = RGB(0, 176, 80)
         ElseIf summaries(i).BestMAPE < 25 Then
-            trendIndicator = "►" ' Flat trend (ok)
+            trendIndicator = ">" ' Flat trend (ok)
             sparkRange.Font.Color = RGB(255, 192, 0)
         Else
-            trendIndicator = "▼" ' Downward trend (attention needed)
+            trendIndicator = "v" ' Downward trend (attention needed)
             sparkRange.Font.Color = RGB(255, 0, 0)
         End If
 
@@ -4164,7 +4164,7 @@ Public Sub CreateSeasonalHeatmap(ws As Worksheet, Values() As Double, componentN
                     normalized = 0.5
                 End If
 
-                ' Color gradient: Blue (low) → White (mid) → Red (high)
+                ' Color gradient: Blue (low) -> White (mid) -> Red (high)
                 Dim r As Integer, g As Integer, b As Integer
                 If normalized < 0.5 Then
                     ' Blue to white
