@@ -1170,53 +1170,76 @@ End Function
 ' ============================================================================
 Private Sub GenerateSummaryDashboard()
     Dim ws As Worksheet
+    Dim chartWs As Worksheet
     Set ws = ThisWorkbook.Worksheets("BatchSummary")
 
-    ' Create comparison charts
-    Call CreateMAPEComparisonChart(ws)
-    Call CreateAccuracyDistributionChart(ws)
-    Call CreateModelSelectionChart(ws)
+    ' Create or get the dedicated BatchCharts sheet
+    On Error Resume Next
+    Set chartWs = ThisWorkbook.Worksheets("BatchCharts")
+    On Error GoTo 0
 
-    ' Add summary statistics
+    If chartWs Is Nothing Then
+        Set chartWs = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets("BatchSummary"))
+        chartWs.Name = "BatchCharts"
+    End If
+
+    ' Clean up any old charts left on BatchSummary from previous runs
+    On Error Resume Next
+    ws.ChartObjects("MAPEComparison").Delete
+    ws.ChartObjects("AccuracyDistribution").Delete
+    ws.ChartObjects("ModelSelection").Delete
+    ws.ChartObjects("PortfolioForecast").Delete
+    ws.ChartObjects("PerformanceEvolution").Delete
+    On Error GoTo 0
+
+    ' Set up charts sheet title
+    chartWs.Cells(1, 1).Value = "Batch Processing - Charts"
+    chartWs.Cells(1, 1).Font.Size = 18
+    chartWs.Cells(1, 1).Font.Bold = True
+    chartWs.Cells(1, 1).Font.Color = RGB(44, 62, 80)
+
+    ' Create all batch charts on the dedicated BatchCharts sheet
+    Call CreateMAPEComparisonChart(ws, chartWs)
+    Call CreateAccuracyDistributionChart(chartWs)
+    Call CreateModelSelectionChart(chartWs)
+    Call CreatePerformanceEvolutionChart(chartWs, ComponentResults(), CInt(ComponentCount))
+
+    ' Add summary statistics (stays on BatchSummary)
     Call AddSummaryStatistics(ws)
 End Sub
 
 ' ============================================================================
 ' Create MAPE Comparison Chart - FIXED VERSION
 ' ============================================================================
-Private Sub CreateMAPEComparisonChart(ws As Worksheet)
+Private Sub CreateMAPEComparisonChart(dataWs As Worksheet, chartWs As Worksheet)
     Dim chartObj As ChartObject
     Dim cht As Chart
     Dim lastRow As Long
-    Dim ser As Series  ' FIX: Capital S
-    Dim chartRow As Long
+    Dim ser As Series
 
-    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    lastRow = dataWs.Cells(dataWs.Rows.Count, 1).End(xlUp).Row
 
-    ' Position chart BELOW all component data to avoid overlay
-    chartRow = lastRow + 5
-
-    ' Delete existing chart
+    ' Delete existing chart from BatchCharts
     On Error Resume Next
-    ws.ChartObjects("MAPEComparison").Delete
+    chartWs.ChartObjects("MAPEComparison").Delete
     On Error GoTo 0
 
-    ' Create chart - positioned BELOW data, not to the right
-    Set chartObj = ws.ChartObjects.Add(Left:=ws.Cells(chartRow, 1).Left, Top:=ws.Cells(chartRow, 1).Top, Width:=600, Height:=400)
+    ' Create chart on BatchCharts at top of sheet
+    Set chartObj = chartWs.ChartObjects.Add(Left:=10, Top:=40, Width:=800, Height:=400)
     chartObj.Name = "MAPEComparison"
     Set cht = chartObj.Chart
 
-    ' Configure chart
+    ' Configure chart - source data stays on BatchSummary
     With cht
         .ChartType = xlColumnClustered
-        .SetSourceData ws.Range("A1:A" & lastRow & ",F1:F" & lastRow)  ' FIX: Column F not E
+        .SetSourceData dataWs.Range("A1:A" & lastRow & ",F1:F" & lastRow)
         .HasTitle = True
         .ChartTitle.Text = "Forecast Accuracy by Component (MAPE %)"
         .Axes(xlCategory).TickLabels.Orientation = 45
         .Axes(xlValue).HasTitle = True
         .Axes(xlValue).AxisTitle.Text = "MAPE (%)"
 
-        ' Add threshold lines
+        ' Format series
         Set ser = .SeriesCollection(1)
         ser.Format.Fill.ForeColor.RGB = RGB(68, 114, 196)
     End With
@@ -1225,18 +1248,16 @@ End Sub
 ' ============================================================================
 ' Create Accuracy Distribution Chart
 ' ============================================================================
-Private Sub CreateAccuracyDistributionChart(ws As Worksheet)
+Private Sub CreateAccuracyDistributionChart(chartWs As Worksheet)
     Dim chartObj As ChartObject
     Dim cht As Chart
     Dim excellentCount As Long, goodCount As Long, acceptableCount As Long, poorCount As Long, errorCount As Long
     Dim i As Long
-    Dim lastRow As Long
-    Dim chartRow As Long
+    Dim dataRow As Long
     Dim dataCol As Long
 
-    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
-    chartRow = lastRow + 5 + 30  ' Position below first chart
-    dataCol = 65  ' Column BM - well beyond our 61 data columns
+    dataRow = 1   ' Temp source data in hidden columns, starting row 1
+    dataCol = 30  ' Column AD - off-screen on BatchCharts
 
     ' Count each class
     For i = 1 To ComponentCount
@@ -1249,31 +1270,31 @@ Private Sub CreateAccuracyDistributionChart(ws As Worksheet)
         End Select
     Next i
 
-    ' Create data range - use columns beyond data range
-    ws.Cells(chartRow, dataCol).Value = "Excellent"
-    ws.Cells(chartRow + 1, dataCol).Value = "Good"
-    ws.Cells(chartRow + 2, dataCol).Value = "Acceptable"
-    ws.Cells(chartRow + 3, dataCol).Value = "Poor"
-    ws.Cells(chartRow + 4, dataCol).Value = "Error"
-    ws.Cells(chartRow, dataCol + 1).Value = excellentCount
-    ws.Cells(chartRow + 1, dataCol + 1).Value = goodCount
-    ws.Cells(chartRow + 2, dataCol + 1).Value = acceptableCount
-    ws.Cells(chartRow + 3, dataCol + 1).Value = poorCount
-    ws.Cells(chartRow + 4, dataCol + 1).Value = errorCount
+    ' Write temp source data for chart
+    chartWs.Cells(dataRow, dataCol).Value = "Excellent"
+    chartWs.Cells(dataRow + 1, dataCol).Value = "Good"
+    chartWs.Cells(dataRow + 2, dataCol).Value = "Acceptable"
+    chartWs.Cells(dataRow + 3, dataCol).Value = "Poor"
+    chartWs.Cells(dataRow + 4, dataCol).Value = "Error"
+    chartWs.Cells(dataRow, dataCol + 1).Value = excellentCount
+    chartWs.Cells(dataRow + 1, dataCol + 1).Value = goodCount
+    chartWs.Cells(dataRow + 2, dataCol + 1).Value = acceptableCount
+    chartWs.Cells(dataRow + 3, dataCol + 1).Value = poorCount
+    chartWs.Cells(dataRow + 4, dataCol + 1).Value = errorCount
 
     ' Delete existing chart
     On Error Resume Next
-    ws.ChartObjects("AccuracyDistribution").Delete
+    chartWs.ChartObjects("AccuracyDistribution").Delete
     On Error GoTo 0
 
-    ' Create chart - positioned below data
-    Set chartObj = ws.ChartObjects.Add(Left:=ws.Cells(chartRow, 1).Left, Top:=ws.Cells(chartRow, 1).Top, Width:=400, Height:=300)
+    ' Create chart - below MAPE chart, left side
+    Set chartObj = chartWs.ChartObjects.Add(Left:=10, Top:=470, Width:=380, Height:=280)
     chartObj.Name = "AccuracyDistribution"
     Set cht = chartObj.Chart
 
     With cht
         .ChartType = xlPie
-        .SetSourceData ws.Range(ws.Cells(chartRow, dataCol), ws.Cells(chartRow + 4, dataCol + 1))
+        .SetSourceData chartWs.Range(chartWs.Cells(dataRow, dataCol), chartWs.Cells(dataRow + 4, dataCol + 1))
         .HasTitle = True
         .ChartTitle.Text = "Accuracy Class Distribution"
         .ApplyDataLabels xlDataLabelsShowPercent
@@ -1283,18 +1304,16 @@ End Sub
 ' ============================================================================
 ' Create Model Selection Chart
 ' ============================================================================
-Private Sub CreateModelSelectionChart(ws As Worksheet)
+Private Sub CreateModelSelectionChart(chartWs As Worksheet)
     Dim chartObj As ChartObject
     Dim cht As Chart
     Dim sesCount As Long, hwCount As Long
     Dim i As Long
-    Dim lastRow As Long
-    Dim chartRow As Long
+    Dim dataRow As Long
     Dim dataCol As Long
 
-    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
-    chartRow = lastRow + 5 + 60  ' Position below second chart
-    dataCol = 65  ' Column BM - well beyond our 61 data columns
+    dataRow = 8   ' Temp source data starts at row 8 (after AccuracyDistribution data)
+    dataCol = 30  ' Column AD - off-screen on BatchCharts
 
     ' Count model selections (exclude errors)
     For i = 1 To ComponentCount
@@ -1307,25 +1326,25 @@ Private Sub CreateModelSelectionChart(ws As Worksheet)
         End If
     Next i
 
-    ' Create data range - use columns beyond data range
-    ws.Cells(chartRow, dataCol).Value = "SES"
-    ws.Cells(chartRow + 1, dataCol).Value = "Holt-Winters"
-    ws.Cells(chartRow, dataCol + 1).Value = sesCount
-    ws.Cells(chartRow + 1, dataCol + 1).Value = hwCount
+    ' Write temp source data for chart
+    chartWs.Cells(dataRow, dataCol).Value = "SES"
+    chartWs.Cells(dataRow + 1, dataCol).Value = "Holt-Winters"
+    chartWs.Cells(dataRow, dataCol + 1).Value = sesCount
+    chartWs.Cells(dataRow + 1, dataCol + 1).Value = hwCount
 
     ' Delete existing chart
     On Error Resume Next
-    ws.ChartObjects("ModelSelection").Delete
+    chartWs.ChartObjects("ModelSelection").Delete
     On Error GoTo 0
 
-    ' Create chart - positioned below data
-    Set chartObj = ws.ChartObjects.Add(Left:=ws.Cells(chartRow, 1).Left, Top:=ws.Cells(chartRow, 1).Top, Width:=400, Height:=300)
+    ' Create chart - below MAPE chart, right side (next to AccuracyDistribution)
+    Set chartObj = chartWs.ChartObjects.Add(Left:=420, Top:=470, Width:=380, Height:=280)
     chartObj.Name = "ModelSelection"
     Set cht = chartObj.Chart
 
     With cht
         .ChartType = xlPie
-        .SetSourceData ws.Range(ws.Cells(chartRow, dataCol), ws.Cells(chartRow + 1, dataCol + 1))
+        .SetSourceData chartWs.Range(chartWs.Cells(dataRow, dataCol), chartWs.Cells(dataRow + 1, dataCol + 1))
         .HasTitle = True
         .ChartTitle.Text = "Best Model Selection"
         .ApplyDataLabels xlDataLabelsShowPercent
@@ -1473,8 +1492,10 @@ Private Sub GeneratePortfolioAnalysis(frequency As Long, seasonalType As String)
     Dim sumSquaredError As Double
     Dim validPoints As Long
 
+    Dim chartWs As Worksheet
     Set ws = ThisWorkbook.Worksheets("BatchSummary")
     Set dataWs = ThisWorkbook.Worksheets("MultiComponentData")
+    Set chartWs = ThisWorkbook.Worksheets("BatchCharts")
     lastRow = dataWs.Cells(dataWs.Rows.Count, 1).End(xlUp).Row
 
     ' Initialize aggregated arrays for portfolio
@@ -1617,8 +1638,8 @@ Private Sub GeneratePortfolioAnalysis(frequency As Long, seasonalType As String)
     ' Write portfolio metrics to summary
     Call WritePortfolioMetrics(ws, portfolioMAPE, portfolioMAE, portfolioRMSE, portfolioBestModel)
 
-    ' Create portfolio forecast chart (summary version)
-    Call CreatePortfolioForecastChart(ws, portfolioActual, portfolioForecast, portfolioLower95, portfolioUpper95)
+    ' Create portfolio forecast chart on BatchCharts sheet
+    Call CreatePortfolioForecastChart(chartWs, portfolioActual, portfolioForecast, portfolioLower95, portfolioUpper95)
 
     ' Create portfolio forecast worksheet
     Call CreatePortfolioForecastSheet(portfolioActual, portfolioFitted, portfolioForecast, portfolioLower95, portfolioUpper95)
@@ -2106,10 +2127,8 @@ Private Sub CreatePortfolioForecastChart(ws As Worksheet, actual() As Double, fo
         ws.Cells(dataStartRow + UBound(actual) + i, 32).Value = upper(i)
     Next i
 
-    ' Create chart
-    Set chartObj = ws.ChartObjects.Add(Left:=ws.Cells(dataStartRow + UBound(actual) + UBound(forecast) + 3, 28).Left, _
-                                       Top:=ws.Cells(dataStartRow + UBound(actual) + UBound(forecast) + 3, 28).Top, _
-                                       Width:=600, Height:=400)
+    ' Create chart on BatchCharts - fixed position below the pie charts
+    Set chartObj = ws.ChartObjects.Add(Left:=10, Top:=780, Width:=800, Height:=400)
     chartObj.Name = "PortfolioForecast"
     Set cht = chartObj.Chart
 
@@ -4022,38 +4041,39 @@ End Sub
 Public Sub CreatePerformanceEvolutionChart(ws As Worksheet, summaries() As ComponentSummary, numComponents As Integer)
     ' Show how model accuracy has evolved across components
 
-    Dim lastRow As Long
-    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).row
-
-    Dim chartRow As Long
-    chartRow = lastRow + 5
+    Dim dataRow As Long
+    dataRow = 1  ' Fixed start row for temp data on BatchCharts
 
     Dim dataCol As Long
     dataCol = 70 ' Column BR
 
-    ' Write data
-    ws.Cells(chartRow, dataCol).Value = "Component #"
-    ws.Cells(chartRow, dataCol + 1).Value = "MAPE %"
-    ws.Cells(chartRow, dataCol + 2).Value = "Target (15%)"
-    ws.Cells(chartRow, dataCol + 3).Value = "Baseline (25%)"
+    ' Write temp source data for chart
+    ws.Cells(dataRow, dataCol).Value = "Component #"
+    ws.Cells(dataRow, dataCol + 1).Value = "MAPE %"
+    ws.Cells(dataRow, dataCol + 2).Value = "Target (15%)"
+    ws.Cells(dataRow, dataCol + 3).Value = "Baseline (25%)"
 
     Dim i As Integer
     For i = 1 To numComponents
-        ws.Cells(chartRow + i, dataCol).Value = i
-        ws.Cells(chartRow + i, dataCol + 1).Value = summaries(i).BestMAPE
-        ws.Cells(chartRow + i, dataCol + 2).Value = 15 ' Target line
-        ws.Cells(chartRow + i, dataCol + 3).Value = 25 ' Baseline
+        ws.Cells(dataRow + i, dataCol).Value = i
+        ws.Cells(dataRow + i, dataCol + 1).Value = summaries(i).BestMAPE
+        ws.Cells(dataRow + i, dataCol + 2).Value = 15 ' Target line
+        ws.Cells(dataRow + i, dataCol + 3).Value = 25 ' Baseline
     Next i
 
-    ' Create line chart
+    ' Delete existing chart if present
+    On Error Resume Next
+    ws.ChartObjects("PerformanceEvolution").Delete
+    On Error GoTo 0
+
+    ' Create line chart - fixed position below portfolio forecast chart
     Dim chartObj As ChartObject
-    Set chartObj = ws.ChartObjects.Add(Left:=ws.Cells(chartRow, dataCol + 6).Left, _
-                                      Top:=ws.Cells(chartRow, dataCol + 6).Top, _
-                                      Width:=500, Height:=300)
+    Set chartObj = ws.ChartObjects.Add(Left:=10, Top:=1210, Width:=700, Height:=300)
+    chartObj.Name = "PerformanceEvolution"
 
     With chartObj.Chart
         .ChartType = xlLineMarkers
-        .SetSourceData ws.Range(ws.Cells(chartRow, dataCol), ws.Cells(chartRow + numComponents, dataCol + 3))
+        .SetSourceData ws.Range(ws.Cells(dataRow, dataCol), ws.Cells(dataRow + numComponents, dataCol + 3))
 
         .HasTitle = True
         .ChartTitle.Text = "Forecast Accuracy Across Portfolio"
