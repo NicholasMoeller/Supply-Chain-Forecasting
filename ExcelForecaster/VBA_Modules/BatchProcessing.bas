@@ -284,6 +284,9 @@ Public Sub ProcessAllComponents(frequency As Long, horizon As Long, seasonalType
     Call AddTrafficLights(summaryWs, ComponentResults(), CInt(ComponentCount))
     Call AddSparklines(summaryWs, ComponentResults(), CInt(ComponentCount))
 
+    ' Generate executive KPI dashboard on BatchSummary
+    Call CreateExecutiveDashboard(summaryWs, ComponentResults(), CInt(ComponentCount))
+
     ' Auto-fit all data columns now that rows are populated
     summaryWs.Columns("A:BI").AutoFit
 
@@ -3967,6 +3970,11 @@ Public Sub AddTrafficLights(ws As Worksheet, summaries() As ComponentSummary, nu
     Dim i As Integer
     Dim startRow As Long
     startRow = 2 ' Row 1 is headers, data starts at row 2
+
+    ' Add header in row 1 (matches header style of other columns)
+    ws.Cells(1, 63).Value = "Status"
+    ws.Cells(1, 63).Font.Bold = True
+    ws.Cells(1, 63).Interior.Color = RGB(217, 217, 217)
 
     For i = 1 To numComponents
         Dim status As String
