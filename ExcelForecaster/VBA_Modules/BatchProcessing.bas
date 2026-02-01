@@ -280,6 +280,10 @@ Public Sub ProcessAllComponents(frequency As Long, horizon As Long, seasonalType
     Call GenerateCorrelationAnalysis(summaryWs)
     Call GenerateBatchSummaryStats(summaryWs)
 
+    ' Add visual indicators (traffic lights and sparklines) to BatchSummary
+    Call AddTrafficLights(summaryWs, ComponentResults(), CInt(ComponentCount))
+    Call AddSparklines(summaryWs, ComponentResults(), CInt(ComponentCount))
+
     ' Auto-fit all data columns now that rows are populated
     summaryWs.Columns("A:BI").AutoFit
 
@@ -3958,11 +3962,11 @@ End Sub
 ' ============================================================================
 
 Public Sub AddTrafficLights(ws As Worksheet, summaries() As ComponentSummary, numComponents As Integer)
-    ' Add traffic light indicators in column 1 for quick visual assessment
+    ' Add traffic light indicators in column 63 (beyond data + sparklines)
 
     Dim i As Integer
     Dim startRow As Long
-    startRow = 8 ' Where component data starts
+    startRow = 2 ' Row 1 is headers, data starts at row 2
 
     For i = 1 To numComponents
         Dim status As String
@@ -3983,8 +3987,8 @@ Public Sub AddTrafficLights(ws As Worksheet, summaries() As ComponentSummary, nu
             color = RGB(255, 0, 0)
         End If
 
-        ' Add traffic light
-        With ws.Cells(startRow + i - 1, 1)
+        ' Add traffic light in column 63
+        With ws.Cells(startRow + i - 1, 63)
             .Value = status
             .Font.Color = color
             .Font.Size = 16
@@ -4005,12 +4009,12 @@ Public Sub AddSparklines(ws As Worksheet, summaries() As ComponentSummary, numCo
 
     Dim i As Integer
     Dim startRow As Long
-    startRow = 8
+    startRow = 2 ' Row 1 is headers, data starts at row 2
 
-    ' Add header
-    ws.Cells(startRow - 1, 62).Value = "Trend"
-    ws.Cells(startRow - 1, 62).Font.Bold = True
-    ws.Cells(startRow - 1, 62).Interior.Color = RGB(217, 217, 217)
+    ' Add header in row 1 (aligns with other column headers)
+    ws.Cells(1, 62).Value = "Trend"
+    ws.Cells(1, 62).Font.Bold = True
+    ws.Cells(1, 62).Interior.Color = RGB(217, 217, 217)
 
     For i = 1 To numComponents
         ' Create sparkline in column BJ (62)
