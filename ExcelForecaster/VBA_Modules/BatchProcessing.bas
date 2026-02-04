@@ -268,6 +268,9 @@ Public Sub ProcessAllComponents(frequency As Long, horizon As Long, seasonalType
     ' Generate summary dashboard
     Call GenerateSummaryDashboard
 
+    ' Create column reference guide tab
+    Call CreateColumnGuideSheet
+
     ' Calculate ABC classification
     Call CalculateABCClassification
 
@@ -631,6 +634,329 @@ Private Sub CreateSummaryWorksheet()
     End With
 
     ws.Columns("A:BI").AutoFit
+End Sub
+
+' ============================================================================
+' Create Column Guide Sheet - documents every BatchSummary column
+' ============================================================================
+Private Sub CreateColumnGuideSheet()
+    Dim ws As Worksheet
+    Dim r As Long  ' running row counter
+
+    ' Delete existing sheet if present
+    On Error Resume Next
+    Application.DisplayAlerts = False
+    ThisWorkbook.Worksheets("Column Guide").Delete
+    Application.DisplayAlerts = True
+    On Error GoTo 0
+
+    ' Create after BatchCharts
+    On Error Resume Next
+    Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets("BatchCharts"))
+    On Error GoTo 0
+    If ws Is Nothing Then
+        Set ws = ThisWorkbook.Worksheets.Add()
+    End If
+    ws.Name = "Column Guide"
+
+    ' --- Title block ---
+    ws.Cells(1, 1).Value = "BatchSummary - Column Guide"
+    ws.Cells(1, 1).Font.Size = 18
+    ws.Cells(1, 1).Font.Bold = True
+    ws.Cells(1, 1).Font.Color = RGB(44, 62, 80)
+    ws.Range("A1:E1").Merge
+
+    ws.Cells(2, 1).Value = "Reference guide explaining every column in the BatchSummary tab"
+    ws.Cells(2, 1).Font.Size = 11
+    ws.Cells(2, 1).Font.Color = RGB(100, 100, 100)
+    ws.Range("A2:E2").Merge
+
+    ' --- Table column headers (row 4) ---
+    r = 4
+    Dim h As Integer
+    Dim hdrs(0 To 4) As String
+    hdrs(0) = "Col #" : hdrs(1) = "Column Name" : hdrs(2) = "Category"
+    hdrs(3) = "What It Means" : hdrs(4) = "Possible Values / How to Read"
+    For h = 0 To 4
+        With ws.Cells(r, h + 1)
+            .Value = hdrs(h)
+            .Font.Bold = True
+            .Font.Color = RGB(255, 255, 255)
+            .Interior.Color = RGB(44, 62, 80)
+            .HorizontalAlignment = xlCenter
+        End With
+    Next h
+    r = 5
+
+    ' =====================================================================
+    ' SECTION: CORE INFORMATION
+    ' =====================================================================
+    Call WriteGuideSection(ws, r, "CORE INFORMATION", RGB(68, 114, 196))
+    r = r + 1
+    Call WriteGuideRow(ws, r, 1, "Component", "Core", "Name of the product or demand stream being forecasted.", "Text label from input sheet")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 2, "Data Points", "Core", "Number of historical time periods available for this component.", "Integer >= 1")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 3, "Frequency", "Core", "Time-period length used to detect seasonality. Set this to match your data.", "52 = weekly, 12 = monthly, 4 = quarterly, 1 = annual")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 4, "Status", "Core", "Whether forecasting completed successfully for this component.", "OK (green) = success  |  ERROR: reason (red) = failed")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 5, "Best Model", "Core", "The forecasting method that achieved the lowest MAPE across all candidates.", "SES  |  Holt-Winters")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 6, "Best MAPE (%)", "Core", "Mean Absolute Percentage Error of the selected model. Primary accuracy metric -- lower is better.", "< 10% Excellent  |  10-20% Good  |  20-30% Acceptable  |  > 30% Poor")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 7, "Accuracy Class", "Core", "Letter-grade rating derived from Best MAPE.", "Excellent  |  Good  |  Acceptable  |  Poor")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 8, "ABC Class", "Core", "ABC inventory classification. Drives how much attention the forecast deserves.", "A = high value/volume  |  B = medium  |  C = low")
+    r = r + 1
+
+    ' =====================================================================
+    ' SECTION: SES MODEL RESULTS
+    ' =====================================================================
+    Call WriteGuideSection(ws, r, "SES MODEL RESULTS  (Simple Exponential Smoothing)", RGB(112, 148, 196))
+    r = r + 1
+    Call WriteGuideRow(ws, r, 9, "SES Alpha", "SES", "Smoothing parameter (level). Higher values weight recent data more heavily.", "0 to 1  (optimizer-selected)")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 10, "SES MAPE (%)", "SES", "Mean Absolute Percentage Error achieved by the SES model.", "Lower is better")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 11, "SES MAE", "SES", "Mean Absolute Error in original demand units.", "In same units as demand")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 12, "SES RMSE", "SES", "Root Mean Squared Error -- penalizes large errors more than MAE.", "In same units as demand")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 13, "SES MBE", "SES", "Mean Bias Error. Shows systematic over- or under-forecasting.", "+ = over-forecasting  |  - = under-forecasting  |  0 = unbiased")
+    r = r + 1
+
+    ' =====================================================================
+    ' SECTION: HOLT-WINTERS MODEL RESULTS
+    ' =====================================================================
+    Call WriteGuideSection(ws, r, "HOLT-WINTERS MODEL RESULTS  (Exponential Smoothing with Trend + Season)", RGB(91, 155, 213))
+    r = r + 1
+    Call WriteGuideRow(ws, r, 14, "HW Alpha", "Holt-Winters", "Level smoothing parameter. Controls how fast the baseline adjusts.", "0 to 1")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 15, "HW Beta", "Holt-Winters", "Trend smoothing parameter. Controls how fast the trend line adjusts.", "0 to 1")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 16, "HW Gamma", "Holt-Winters", "Seasonal smoothing parameter. Controls how fast seasonal patterns update.", "0 to 1")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 17, "HW MAPE (%)", "Holt-Winters", "Mean Absolute Percentage Error achieved by Holt-Winters.", "Lower is better")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 18, "HW MAE", "Holt-Winters", "Mean Absolute Error in original demand units.", "In same units as demand")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 19, "HW RMSE", "Holt-Winters", "Root Mean Squared Error for the Holt-Winters model.", "In same units as demand")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 20, "HW MBE", "Holt-Winters", "Mean Bias Error for the Holt-Winters model.", "+ = over-forecasting  |  - = under-forecasting  |  0 = unbiased")
+    r = r + 1
+
+    ' =====================================================================
+    ' SECTION: QUALITY & WARNINGS
+    ' =====================================================================
+    Call WriteGuideSection(ws, r, "QUALITY & WARNINGS", RGB(255, 192, 0))
+    r = r + 1
+    Call WriteGuideRow(ws, r, 21, "Quality Flag", "Quality", "Overall health check combining accuracy, bias, and data quality into one verdict.", "GOOD (green)  |  WARNING (yellow)  |  CRITICAL (red)")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 22, "Warning Message", "Quality", "Specific issues flagged for this component (e.g. low data points, high volatility).", "Free text, blank if no warnings")
+    r = r + 1
+
+    ' =====================================================================
+    ' SECTION: BENCHMARK COMPARISON
+    ' =====================================================================
+    Call WriteGuideSection(ws, r, "BENCHMARK COMPARISON  (Is the model actually adding value?)", RGB(112, 173, 71))
+    r = r + 1
+    Call WriteGuideRow(ws, r, 23, "Naive MAPE (%)", "Benchmark", "MAPE of the naive method: simply repeats the last known value as the forecast.", "Baseline to beat")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 24, "Seasonal Naive MAPE (%)", "Benchmark", "MAPE of seasonal naive: uses the value from the same period last season.", "Baseline to beat (for seasonal data)")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 25, "Forecast Value Add (%)", "Benchmark", "How much better the chosen model is vs the naive baseline. Negative means naive was better.", "+ = model adds value  |  - = stick with naive  |  0 = no difference")
+    r = r + 1
+
+    ' =====================================================================
+    ' SECTION: BIAS ANALYSIS
+    ' =====================================================================
+    Call WriteGuideSection(ws, r, "BIAS ANALYSIS", RGB(237, 125, 49))
+    r = r + 1
+    Call WriteGuideRow(ws, r, 26, "Bias Direction", "Bias", "Which way the forecast systematically drifts vs actual demand.", "Over  |  Under  |  None")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 27, "Bias Amount", "Bias", "Average magnitude of the systematic error in original demand units.", "In same units as demand")
+    r = r + 1
+
+    ' =====================================================================
+    ' SECTION: BACKTEST VALIDATION
+    ' =====================================================================
+    Call WriteGuideSection(ws, r, "BACKTEST VALIDATION  (Out-of-sample accuracy check)", RGB(68, 114, 196))
+    r = r + 1
+    Call WriteGuideRow(ws, r, 28, "Backtest MAPE (%)", "Backtest", "MAPE measured by re-training the model at multiple past dates and forecasting forward. More realistic than in-sample MAPE.", "Lower is better (realistic estimate)")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 29, "Backtest Origins", "Backtest", "Number of historical starting points used in the backtest.", "Integer count")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 30, "Reliability", "Backtest", "Whether the model performed consistently across all backtest origins.", "Consistent (green)  |  Variable (yellow)  |  Unstable (pink)")
+    r = r + 1
+
+    ' =====================================================================
+    ' SECTION: DATA QUALITY
+    ' =====================================================================
+    Call WriteGuideSection(ws, r, "DATA QUALITY  (How clean is the input?)", RGB(255, 192, 0))
+    r = r + 1
+    Call WriteGuideRow(ws, r, 31, "Data Quality Score", "Data Quality", "Composite score 0-100 measuring input data cleanliness. Considers gaps, outliers, and volatility.", ">= 80 Green  |  60-79 Yellow  |  40-59 Orange  |  < 40 Red")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 32, "Missing/Zero %", "Data Quality", "Percentage of periods with missing or zero demand values.", "0% ideal  |  > 20% indicates data problems")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 33, "Outlier %", "Data Quality", "Percentage of data points flagged as statistical outliers.", "0% ideal  |  > 10% check for data errors")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 34, "Volatility Index", "Data Quality", "How much demand varies period to period. Higher = harder to forecast accurately.", "Low < 0.3  |  Medium 0.3-0.7  |  High > 0.7")
+    r = r + 1
+
+    ' =====================================================================
+    ' SECTION: PATTERN DETECTION
+    ' =====================================================================
+    Call WriteGuideSection(ws, r, "PATTERN DETECTION  (What does the demand look like?)", RGB(112, 173, 71))
+    r = r + 1
+    Call WriteGuideRow(ws, r, 35, "Pattern Type", "Pattern", "The dominant demand pattern detected by the classifier.", "Stable / Trending / Seasonal / Mixed / Intermittent / Volatile")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 36, "Trend Direction", "Pattern", "Overall direction the demand is moving in.", "^ Upward (green)  |  v Downward (red)  |  -> Flat (gray)")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 37, "Seasonal Strength", "Pattern", "How strong the repeating seasonal pattern is (0 to 1).", "0 = no season  |  > 0.5 = clear seasonal pattern")
+    r = r + 1
+
+    ' =====================================================================
+    ' SECTION: SAFETY STOCK & INVENTORY
+    ' =====================================================================
+    Call WriteGuideSection(ws, r, "SAFETY STOCK & INVENTORY  (Replenishment guidance)", RGB(237, 125, 49))
+    r = r + 1
+    Call WriteGuideRow(ws, r, 38, "Avg Demand/Period", "Inventory", "Average demand per time period over the historical window.", "In same units as demand")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 39, "Safety Stock (95%)", "Inventory", "Units to hold as buffer to hit a 95% service level (fill rate).", "In same units as demand")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 40, "Safety Stock (99%)", "Inventory", "Buffer stock for a 99% service level -- higher but safer.", "In same units as demand")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 41, "Reorder Point (95%)", "Inventory", "Stock level to trigger a reorder at 95% service level = lead-time demand + safety stock.", "In same units as demand")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 42, "Reorder Point (99%)", "Inventory", "Reorder point for 99% service level.", "In same units as demand")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 43, "Stockout Risk (%)", "Inventory", "Estimated probability of running out of stock if no safety stock is held.", "< 10% Low (green)  |  10-25% Medium (yellow)  |  > 25% High (pink)")
+    r = r + 1
+
+    ' =====================================================================
+    ' SECTION: FORECAST RISK (VaR)
+    ' =====================================================================
+    Call WriteGuideSection(ws, r, "FORECAST RISK  (Demand uncertainty scenarios)", RGB(192, 80, 80))
+    r = r + 1
+    Call WriteGuideRow(ws, r, 44, "Forecast P5", "Risk", "5th-percentile demand estimate (pessimistic low scenario).", "In same units as demand")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 45, "Forecast P10", "Risk", "10th-percentile demand estimate.", "In same units as demand")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 46, "Forecast P90", "Risk", "90th-percentile demand estimate (high scenario). Use for buffer planning.", "In same units as demand")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 47, "Downside Risk", "Risk", "Expected impact if actual demand exceeds the forecast (worst-case shortfall).", "Higher = more exposure  |  Pink if > 50% of avg demand")
+    r = r + 1
+
+    ' =====================================================================
+    ' SECTION: MODEL SELECTION
+    ' =====================================================================
+    Call WriteGuideSection(ws, r, "MODEL SELECTION  (Why was this model chosen?)", RGB(112, 173, 71))
+    r = r + 1
+    Call WriteGuideRow(ws, r, 48, "Model Selection Reason", "Model", "Plain-English explanation of why the best model won vs alternatives.", "Free text")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 49, "Model Confidence", "Model", "How confident the system is in the model choice (based on margin between candidates).", "High (green)  |  Medium (yellow)  |  Low (pink)")
+    r = r + 1
+
+    ' =====================================================================
+    ' SECTION: OUTLIER TREATMENT
+    ' =====================================================================
+    Call WriteGuideSection(ws, r, "OUTLIER TREATMENT", RGB(237, 125, 49))
+    r = r + 1
+    Call WriteGuideRow(ws, r, 50, "Outliers Detected", "Outliers", "Number of data points flagged as statistical outliers.", "Integer count (0 = clean data)")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 51, "Outlier Method", "Outliers", "Statistical method used to identify outliers in this component.", "IQR  |  Z-Score  |  MAD  etc.")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 52, "Outliers Adjusted", "Outliers", "Whether outlier values were corrected before forecasting.", "Yes (green)  |  No (pink if outliers exist)")
+    r = r + 1
+
+    ' =====================================================================
+    ' SECTION: DEMAND SENSING
+    ' =====================================================================
+    Call WriteGuideSection(ws, r, "DEMAND SENSING  (Recent signal detection)", RGB(91, 155, 213))
+    r = r + 1
+    Call WriteGuideRow(ws, r, 53, "Recent Trend Change", "Demand Sensing", "How the most recent demand signal is evolving vs the historical trend.", "^^ Accelerating  |  vv Decelerating  |  -> Stable")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 54, "Short-Term Bias (%)", "Demand Sensing", "Bias between the model forecast and the most recent actual data points.", "% value  |  non-zero signals the model is drifting")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 55, "Demand Sensing Adj (%)", "Demand Sensing", "Percentage correction applied to the forecast based on recent demand signals. Highlighted yellow if > 5%.", "% adjustment  |  0% = no correction applied")
+    r = r + 1
+
+    ' =====================================================================
+    ' SECTION: MULTI-HORIZON PERFORMANCE
+    ' =====================================================================
+    Call WriteGuideSection(ws, r, "MULTI-HORIZON PERFORMANCE  (Accuracy by forecast range)", RGB(68, 114, 196))
+    r = r + 1
+    Call WriteGuideRow(ws, r, 56, "Short-Term MAPE (1-3)", "Horizon", "Forecast accuracy over the next 1 to 3 periods.", "% value  |  Green = best horizon")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 57, "Medium-Term MAPE (4-6)", "Horizon", "Forecast accuracy over periods 4 to 6.", "% value  |  Green = best horizon")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 58, "Long-Term MAPE (7+)", "Horizon", "Forecast accuracy over period 7 and beyond.", "% value  |  Green = best horizon")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 59, "Best Horizon", "Horizon", "Which time range has the most reliable forecast.", "Short (1-3)  |  Medium (4-6)  |  Long (7+)")
+    r = r + 1
+
+    ' =====================================================================
+    ' SECTION: COMPONENT GROUPING
+    ' =====================================================================
+    Call WriteGuideSection(ws, r, "COMPONENT GROUPING  (Management tiers)", RGB(112, 173, 71))
+    r = r + 1
+    Call WriteGuideRow(ws, r, 60, "Suggested Group", "Grouping", "Recommended management tier based on accuracy, volume, and data quality.", "A-Critical (red) = needs attention  |  B-Standard (yellow)  |  C-Simple (green)  |  D-Problematic (pink) = review")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 61, "Grouping Confidence", "Grouping", "How confident the system is in the recommended group.", "High  |  Medium  |  Low")
+    r = r + 1
+
+    ' =====================================================================
+    ' SECTION: VISUAL INDICATORS
+    ' =====================================================================
+    Call WriteGuideSection(ws, r, "VISUAL INDICATORS  (Quick-glance columns)", RGB(89, 89, 89))
+    r = r + 1
+    Call WriteGuideRow(ws, r, 62, "Trend", "Visual", "Sparkline-style arrow showing the recent demand trajectory for this component.", "^ = rising  |  > = flat  |  v = falling  (color coded)")
+    r = r + 1
+    Call WriteGuideRow(ws, r, 63, "Status", "Visual", "Traffic-light circle giving an at-a-glance health rating for the component.", "Green = good  |  Yellow = caution  |  Orange = warning  |  Red = critical")
+    r = r + 1
+
+    ' --- Column widths ---
+    ws.Columns("A:A").ColumnWidth = 7
+    ws.Columns("B:B").ColumnWidth = 24
+    ws.Columns("C:C").ColumnWidth = 17
+    ws.Columns("D:D").ColumnWidth = 62
+    ws.Columns("E:E").ColumnWidth = 48
+
+    ' Wrap text in Description and Value Guide columns
+    ws.Range("D5:E" & r).WrapText = True
+
+    ' Freeze the header row so it stays visible while scrolling
+    ws.Cells(5, 1).Select
+    ActiveWindow.FreezePanes = True
+End Sub
+
+' --- Helper: write one column-guide data row with alternating shading ---
+Private Sub WriteGuideRow(ws As Worksheet, r As Long, colNum As Integer, colName As String, category As String, description As String, valueGuide As String)
+    ws.Cells(r, 1).Value = colNum
+    ws.Cells(r, 1).HorizontalAlignment = xlCenter
+    ws.Cells(r, 2).Value = colName
+    ws.Cells(r, 2).Font.Bold = True
+    ws.Cells(r, 3).Value = category
+    ws.Cells(r, 4).Value = description
+    ws.Cells(r, 5).Value = valueGuide
+    ws.Cells(r, 5).Font.Color = RGB(80, 80, 80)
+    ' Alternate row shading
+    If (r Mod 2) = 0 Then
+        ws.Range(ws.Cells(r, 1), ws.Cells(r, 5)).Interior.Color = RGB(245, 245, 245)
+    End If
+End Sub
+
+' --- Helper: write a colored section-header row ---
+Private Sub WriteGuideSection(ws As Worksheet, r As Long, sectionName As String, sectionColor As Long)
+    ws.Range(ws.Cells(r, 1), ws.Cells(r, 5)).Merge
+    ws.Cells(r, 1).Value = sectionName
+    With ws.Cells(r, 1)
+        .Font.Bold = True
+        .Font.Size = 11
+        .Font.Color = RGB(255, 255, 255)
+        .Interior.Color = sectionColor
+    End With
 End Sub
 
 ' ============================================================================
