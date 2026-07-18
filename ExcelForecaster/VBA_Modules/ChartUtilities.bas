@@ -398,9 +398,9 @@ Private Sub CreateLjungBoxDisplay(ByRef ws As Worksheet, _
     displayText = displayText & ljungBoxResult(3) & vbCrLf & vbCrLf
 
     If ljungBoxResult(2) > 0.05 Then
-        displayText = displayText & "✓ Model is adequate"
+        displayText = displayText & "[OK] Model is adequate"
     Else
-        displayText = displayText & "✗ Model needs improvement"
+        displayText = displayText & "[!] Model needs improvement"
     End If
 
     ' Create text box shape
@@ -484,7 +484,7 @@ Private Sub CreateResidualsChart(ByRef ws As Worksheet, _
 
     ' Add interpretation guide
     Call AddChartInterpretation(ws, _
-        "✓ Should fluctuate randomly around zero. ✗ Patterns/trends = model missing something.", _
+        "[OK] Should fluctuate randomly around zero. [!] Patterns/trends = model missing something.", _
         left, top + Height + 2, Width)
 
 End Sub
@@ -538,7 +538,7 @@ Private Sub CreateACFChart(ByRef ws As Worksheet, _
 
     ' Add interpretation guide
     Call AddChartInterpretation(ws, _
-        "✓ All bars should be small (~near zero). ✗ Tall bars = residuals correlated with past values.", _
+        "[OK] All bars should be small (~near zero). [!] Tall bars = residuals correlated with past values.", _
         left, top + Height + 2, Width)
 
 End Sub
@@ -592,7 +592,7 @@ Private Sub CreatePACFChart(ByRef ws As Worksheet, _
 
     ' Add interpretation guide
     Call AddChartInterpretation(ws, _
-        "✓ Bars should be small. ✗ Tall bars = direct influence from that lag (ACF can be misleading).", _
+        "[OK] Bars should be small. [!] Tall bars = direct influence from that lag (ACF can be misleading).", _
         left, top + Height + 2, Width)
 
 End Sub
@@ -639,23 +639,33 @@ Private Sub CreateHistogramChart(ByRef ws As Worksheet, _
     maxVal = sorted(n)
     numBins = Int(Sqr(n))
     If numBins < 5 Then numBins = 5
-    binWidth = (maxVal - minVal) / numBins
 
     ReDim bins(1 To numBins)
     ReDim binCenters(1 To numBins)
 
-    For i = 1 To numBins
-        binCenters(i) = minVal + (i - 0.5) * binWidth
-    Next i
+    If maxVal = minVal Then
+        ' All residuals are identical (e.g. perfect fit) - single bin at that value
+        numBins = 1
+        ReDim bins(1 To 1)
+        ReDim binCenters(1 To 1)
+        binCenters(1) = minVal
+        bins(1) = n
+    Else
+        binWidth = (maxVal - minVal) / numBins
 
-    ' Count frequencies
-    For i = 1 To n
-        Dim binIndex As Integer
-        binIndex = Int((sorted(i) - minVal) / binWidth) + 1
-        If binIndex > numBins Then binIndex = numBins
-        If binIndex < 1 Then binIndex = 1
-        bins(binIndex) = bins(binIndex) + 1
-    Next i
+        For i = 1 To numBins
+            binCenters(i) = minVal + (i - 0.5) * binWidth
+        Next i
+
+        ' Count frequencies
+        For i = 1 To n
+            Dim binIndex As Integer
+            binIndex = Int((sorted(i) - minVal) / binWidth) + 1
+            If binIndex > numBins Then binIndex = numBins
+            If binIndex < 1 Then binIndex = 1
+            bins(binIndex) = bins(binIndex) + 1
+        Next i
+    End If
 
     ' Create chart
     Set chartObj = ws.ChartObjects.Add(left, top, Width, Height)
@@ -685,7 +695,7 @@ Private Sub CreateHistogramChart(ByRef ws As Worksheet, _
 
     ' Add interpretation guide
     Call AddChartInterpretation(ws, _
-        "✓ Should look bell-shaped (normal distribution). ✗ Skewed/multiple peaks = non-normal errors.", _
+        "[OK] Should look bell-shaped (normal distribution). [!] Skewed/multiple peaks = non-normal errors.", _
         left, top + Height + 2, Width)
 
 End Sub
@@ -777,7 +787,7 @@ Private Sub CreateQQPlotChart(ByRef ws As Worksheet, _
 
     ' Add interpretation guide
     Call AddChartInterpretation(ws, _
-        "✓ Points should follow red diagonal line. ✗ S-curves or deviations = non-normal residuals.", _
+        "[OK] Points should follow red diagonal line. [!] S-curves or deviations = non-normal residuals.", _
         left, top + Height + 2, Width)
 
 End Sub
@@ -827,3 +837,274 @@ Private Function GetOrCreateSheet(ByVal sheetName As String) As Worksheet
 
     Set GetOrCreateSheet = ws
 End Function
+
+' ============================================================================
+' PORTFOLIO CHART GENERATION - Complete set of charts for portfolio analysis
+' ============================================================================
+
+Public Sub GeneratePortfolioCharts(ByRef actual() As Double, _
+                                   ByRef fitted() As Double, _
+                                   ByRef forecast() As Double, _
+                                   ByRef lower95() As Double, _
+                                   ByRef upper95() As Double, _
+                                   ByRef decompResult As DecompositionResult)
+
+    Dim ws As Worksheet
+    Set ws = GetOrCreateSheet("PortfolioCharts")
+
+    ' Clear existing charts
+    Dim chartObj As ChartObject
+    For Each chartObj In ws.ChartObjects
+        chartObj.Delete
+    Next chartObj
+
+    ' Clear existing shapes (text boxes)
+    Dim shp As Shape
+    For Each shp In ws.Shapes
+        If shp.Type = msoTextBox Then shp.Delete
+    Next shp
+
+    ' Calculate residuals for diagnostic charts
+    Dim residuals() As Double
+    ReDim residuals(LBound(actual) To UBound(actual))
+    Dim i As Long
+    For i = LBound(actual) To UBound(actual)
+        residuals(i) = actual(i) - fitted(i)
+    Next i
+
+    Dim spacing5cm As Double
+    spacing5cm = 142
+
+    ' Row 1: Main Portfolio Forecast Chart (large, prominent)
+    Call CreatePortfolioForecastMainChart(ws, actual, fitted, forecast, lower95, upper95, 10, 10)
+
+    ' Row 2: Diagnostic Charts
+    Dim diagTop As Double
+    diagTop = 10 + 300 + 35 + spacing5cm  ' Main chart height + text + spacing
+
+    ' Residuals, ACF, PACF
+    Call CreateResidualsChart(ws, residuals, 10, diagTop, 240, 180)
+    Call CreateACFChart(ws, residuals, 10 + 240 + 50, diagTop, 240, 180)
+    Call CreatePACFChart(ws, residuals, 10 + 2 * (240 + 50), diagTop, 240, 180)
+
+    ' Row 3: Histogram, Q-Q Plot, Ljung-Box
+    Dim diagTop2 As Double
+    diagTop2 = diagTop + 180 + 35 + spacing5cm  ' Diagnostic height + text + spacing
+
+    Call CreateHistogramChart(ws, residuals, 10, diagTop2, 240, 180)
+    Call CreateQQPlotChart(ws, residuals, 10 + 240 + 50, diagTop2, 240, 180)
+    Call CreateLjungBoxDisplay(ws, residuals, 10 + 2 * (240 + 50), diagTop2, 240, 180)
+
+    ' Row 4: Seasonal Decomposition Charts
+    Dim decompTop As Double
+    decompTop = diagTop2 + 180 + 35 + spacing5cm  ' Previous row height + text + spacing
+
+    ' Check if decomposition was successful (has data)
+    On Error Resume Next
+    Dim hasDecomp As Boolean
+    hasDecomp = (UBound(decompResult.Observed) > 0)
+    On Error GoTo 0
+
+    If hasDecomp Then
+        ' Observed and Trend (top row of decomposition)
+        Call CreateSingleSeriesChart(ws, decompResult.Observed, "Observed (Portfolio)", _
+                                     10, decompTop, 240, 180, RGB(0, 0, 0))
+        Call CreateSingleSeriesChart(ws, decompResult.Trend, "Trend (Portfolio)", _
+                                     10 + 240 + 50, decompTop, 240, 180, RGB(68, 114, 196))
+
+        ' Seasonal and Random (bottom row of decomposition)
+        Dim decompTop2 As Double
+        decompTop2 = decompTop + 180 + 35 + 50  ' Chart height + text + smaller spacing
+
+        Call CreateSingleSeriesChart(ws, decompResult.Seasonal, "Seasonal (Portfolio)", _
+                                     10, decompTop2, 240, 180, RGB(0, 128, 0))
+        Call CreateSingleSeriesChart(ws, decompResult.Random, "Random (Portfolio)", _
+                                     10 + 240 + 50, decompTop2, 240, 180, RGB(255, 0, 0))
+
+        ' Add interpretation for decomposition
+        Call AddChartInterpretation(ws, _
+            "PORTFOLIO SEASONALITY: Observed = total portfolio demand. Trend (blue) = long-term direction. " & _
+            "Seasonal (green) = repeating pattern. Random (red) = noise (should be small).", _
+            10, decompTop2 + 190, 530)
+    End If
+
+    ' Add title and explanation at the top
+    Call AddPortfolioChartTitle(ws)
+
+End Sub
+
+Private Sub CreatePortfolioForecastMainChart(ByRef ws As Worksheet, _
+                                             ByRef actual() As Double, _
+                                             ByRef fitted() As Double, _
+                                             ByRef forecast() As Double, _
+                                             ByRef lower95() As Double, _
+                                             ByRef upper95() As Double, _
+                                             ByVal left As Double, _
+                                             ByVal top As Double)
+
+    Dim chartObj As ChartObject
+    Dim cht As Chart
+    Dim i As Long
+    Dim nActual As Long
+    Dim nForecast As Long
+
+    nActual = UBound(actual) - LBound(actual) + 1
+    nForecast = UBound(forecast) - LBound(forecast) + 1
+
+    ' Create chart
+    Set chartObj = ws.ChartObjects.Add(left, top, 750, 300)
+    Set cht = chartObj.Chart
+    cht.ChartType = xlLine
+
+    ' Clear default series
+    Do While cht.SeriesCollection.Count > 0
+        cht.SeriesCollection(1).Delete
+    Loop
+
+    ' Historical actual data series
+    With cht.SeriesCollection.NewSeries
+        .Name = "Actual Portfolio"
+        .Values = actual
+        .ChartType = xlLine
+        .Format.Line.ForeColor.RGB = RGB(0, 0, 0)
+        .Format.Line.Weight = 2.5
+    End With
+
+    ' Fitted values series
+    With cht.SeriesCollection.NewSeries
+        .Name = "Fitted Portfolio"
+        .Values = fitted
+        .ChartType = xlLine
+        .Format.Line.ForeColor.RGB = RGB(68, 114, 196)  ' Blue
+        .Format.Line.Weight = 2
+    End With
+
+    ' Forecast series (offset to start after historical data)
+    Dim forecastArray() As Variant
+    ReDim forecastArray(1 To nActual + nForecast)
+    For i = 1 To nActual
+        forecastArray(i) = Empty
+    Next i
+    For i = 1 To nForecast
+        forecastArray(nActual + i) = forecast(i)
+    Next i
+
+    With cht.SeriesCollection.NewSeries
+        .Name = "Portfolio Forecast"
+        .Values = forecastArray
+        .ChartType = xlLine
+        .Format.Line.ForeColor.RGB = RGB(237, 125, 49)  ' Orange
+        .Format.Line.Weight = 3
+        .Format.Line.DashStyle = msoLineDash
+    End With
+
+    ' Upper 95% CI
+    Dim upper95Array() As Variant
+    ReDim upper95Array(1 To nActual + nForecast)
+    For i = 1 To nActual
+        upper95Array(i) = Empty
+    Next i
+    For i = 1 To nForecast
+        upper95Array(nActual + i) = upper95(i)
+    Next i
+
+    With cht.SeriesCollection.NewSeries
+        .Name = "95% CI Upper"
+        .Values = upper95Array
+        .ChartType = xlLine
+        .Format.Line.ForeColor.RGB = RGB(192, 192, 192)
+        .Format.Line.DashStyle = msoLineDash
+        .Format.Line.Weight = 1.5
+    End With
+
+    ' Lower 95% CI
+    Dim lower95Array() As Variant
+    ReDim lower95Array(1 To nActual + nForecast)
+    For i = 1 To nActual
+        lower95Array(i) = Empty
+    Next i
+    For i = 1 To nForecast
+        lower95Array(nActual + i) = lower95(i)
+    Next i
+
+    With cht.SeriesCollection.NewSeries
+        .Name = "95% CI Lower"
+        .Values = lower95Array
+        .ChartType = xlLine
+        .Format.Line.ForeColor.RGB = RGB(192, 192, 192)
+        .Format.Line.DashStyle = msoLineDash
+        .Format.Line.Weight = 1.5
+    End With
+
+    ' Chart formatting
+    cht.HasTitle = True
+    cht.ChartTitle.Text = "PORTFOLIO FORECAST - Aggregated Across All Components"
+    cht.ChartTitle.Font.Size = 14
+    cht.ChartTitle.Font.Bold = True
+
+    With cht.Axes(xlCategory)
+        .HasTitle = True
+        .AxisTitle.Text = "Period"
+        .AxisTitle.Font.Size = 11
+    End With
+
+    With cht.Axes(xlValue)
+        .HasTitle = True
+        .AxisTitle.Text = "Total Portfolio Volume"
+        .AxisTitle.Font.Size = 11
+    End With
+
+    cht.HasLegend = True
+    cht.Legend.Position = xlLegendPositionBottom
+
+    ' Add interpretation guide
+    Call AddChartInterpretation(ws, _
+        "HOW TO READ: Black line = actual portfolio totals. Blue line = fitted (should track closely). " & _
+        "Orange dashed = forecast. Gray bands = 95% confidence interval. Narrower bands = more confident forecast.", _
+        left, top + 310, 750)
+
+End Sub
+
+Private Sub AddPortfolioChartTitle(ByRef ws As Worksheet)
+    Dim shp As Shape
+
+    ' Create title text box
+    Set shp = ws.Shapes.AddTextbox(msoTextOrientationHorizontal, 10, 10, 750, 80)
+
+    With shp
+        .TextFrame.Characters.Text = "PORTFOLIO-LEVEL FORECAST ANALYSIS" & vbCrLf & vbCrLf & _
+            "This sheet shows comprehensive diagnostic charts for your aggregated portfolio forecast. " & _
+            "Portfolio values represent the sum of all components. Use these charts to validate the " & _
+            "quality of your overall portfolio forecast and identify any systematic errors."
+        .TextFrame.Characters.Font.Name = "Calibri"
+        .TextFrame.Characters.Font.Size = 10
+        .TextFrame.MarginLeft = 15
+        .TextFrame.MarginTop = 10
+        .TextFrame.MarginRight = 15
+        .TextFrame.MarginBottom = 10
+        .Fill.ForeColor.RGB = RGB(68, 114, 196)
+        .Line.ForeColor.RGB = RGB(0, 0, 0)
+        .Line.Weight = 2
+        .TextFrame.Characters.Font.Color = RGB(255, 255, 255)
+    End With
+
+    ' Format first line as larger and bold
+    shp.TextFrame.Characters(1, 33).Font.Bold = True
+    shp.TextFrame.Characters(1, 33).Font.Size = 14
+
+    ' Move charts down to make room for title
+    Dim chartObj As ChartObject
+    For Each chartObj In ws.ChartObjects
+        chartObj.top = chartObj.top + 90
+    Next chartObj
+
+    ' Move interpretation boxes down too
+    Dim shape As Shape
+    For Each shape In ws.Shapes
+        If shape.Type = msoTextBox And shape.Name <> shp.Name Then
+            shape.top = shape.top + 90
+        End If
+    Next shape
+
+End Sub
+
